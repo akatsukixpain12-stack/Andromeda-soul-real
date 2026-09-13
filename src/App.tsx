@@ -7,7 +7,8 @@ import { AuthModal } from './components/AuthModal';
 import { ImageCreationModal } from './components/ImageCreationModal';
 import { ConsoleModal } from './components/ConsoleModal';
 import { DiscordModal } from './components/DiscordModal';
-import { Conversation, ChatMessage, ChatAttachment, UserSettings, UserProfile } from './types';
+import { LearnedKnowledgeModal } from './components/LearnedKnowledgeModal';
+import { Conversation, ChatMessage, ChatAttachment, UserSettings, UserProfile, LearnedKnowledge } from './types';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import { streamMultiProviderChat } from './lib/aiClient';
 import { AI_MODELS, findModelById } from './data/models';
@@ -83,6 +84,25 @@ export function App() {
   const [isMediaEngineOpen, setIsMediaEngineOpen] = useState(false);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isDiscordModalOpen, setIsDiscordModalOpen] = useState(false);
+  const [isKnowledgeModalOpen, setIsKnowledgeModalOpen] = useState(false);
+  const [learnedKnowledge, setLearnedKnowledge] = useState<LearnedKnowledge[]>([
+    {
+      id: 'k-1',
+      topic: 'React 18 & TypeScript Patterns',
+      insight: 'Use modular functional components, strict interface definitions, and custom hooks.',
+      category: 'coding_style',
+      tags: ['react', 'typescript', 'frontend'],
+      createdAt: Date.now() - 86400000,
+    },
+    {
+      id: 'k-2',
+      topic: 'Discord Bot API Gateway',
+      insight: 'Autonomous bot commands handle /discord slash commands and webhooks.',
+      category: 'system_architecture',
+      tags: ['discord', 'gateway', 'bot'],
+      createdAt: Date.now() - 43200000,
+    },
+  ]);
 
   // Streaming State
   const [isStreaming, setIsStreaming] = useState(false);
@@ -534,6 +554,27 @@ export function App() {
     }
   };
 
+  // Export conversation transcript directly into Gmail App
+  const handleExportToGmail = (conversationToExport?: Conversation) => {
+    const target = conversationToExport || activeConversation;
+    if (!target) return;
+
+    const transcript = target.messages
+      .map((m) => {
+        const sender = m.role === 'user' ? (currentUser?.name || 'User') : (m.model || 'Andromeda Soul AI');
+        return `[${sender}]:\n${m.content}\n`;
+      })
+      .join('\n----------------------------------------\n\n');
+
+    const subject = encodeURIComponent(`Andromeda Soul Chat: ${target.title}`);
+    const body = encodeURIComponent(
+      `Andromeda Soul Conversation Transcript\nTitle: ${target.title}\nDate: ${new Date(target.createdAt).toLocaleString()}\n\n========================================\n\n${transcript}`
+    );
+
+    const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&tf=1&su=${subject}&body=${body}`;
+    window.open(gmailComposeUrl, '_blank');
+  };
+
   return (
     <div className="flex h-[100dvh] w-full max-w-full bg-[#FAF9F5] text-[#1C1917] overflow-hidden select-text">
       {/* 1. Left Sidebar (Collapsible drawer with chats, search, and free provider widgets) */}
@@ -550,6 +591,9 @@ export function App() {
         onOpenSettings={() => setIsProvidersModalOpen(true)}
         onOpenProviders={() => setIsProvidersModalOpen(true)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenKnowledgeModal={() => setIsKnowledgeModalOpen(true)}
+        onExportGmail={handleExportToGmail}
+        knowledgeCount={learnedKnowledge.length}
         onOpenMediaEngine={() => setIsMediaEngineOpen(true)}
         onOpenTerminal={() => setIsTerminalOpen(true)}
         onOpenDiscord={() => setIsDiscordModalOpen(true)}
@@ -568,6 +612,9 @@ export function App() {
           onSelectModel={setSelectedModelId}
           onOpenProvidersModal={() => setIsProvidersModalOpen(true)}
           onOpenAuth={() => setIsAuthModalOpen(true)}
+          onOpenKnowledgeModal={() => setIsKnowledgeModalOpen(true)}
+          onExportGmail={() => handleExportToGmail()}
+          knowledgeCount={learnedKnowledge.length}
           currentUser={currentUser}
           activeConversationTitle={activeConversation?.title}
           onRenameActiveConversation={(title) => handleRenameConversation(activeConversationId, title)}
@@ -675,6 +722,15 @@ export function App() {
         isOpen={isDiscordModalOpen}
         onClose={() => setIsDiscordModalOpen(false)}
         onSendBotCommand={(cmd) => handleSendMessage(cmd)}
+      />
+
+      {/* 8. Learned Knowledge & Cloud Memory Inspector */}
+      <LearnedKnowledgeModal
+        isOpen={isKnowledgeModalOpen}
+        onClose={() => setIsKnowledgeModalOpen(false)}
+        knowledgeList={learnedKnowledge}
+        currentUser={currentUser}
+        onAddKnowledge={(item) => setLearnedKnowledge((prev) => [item, ...prev])}
       />
     </div>
   );

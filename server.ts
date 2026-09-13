@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import OpenAI from 'openai';
 import { db } from './server/db.js';
 import { GeminiModel } from './src/types.js';
 import { PRESET_PROJECTS, PYTORCH_MODEL_CODE } from './server/presets.js';
@@ -85,6 +86,17 @@ function getGeminiClient(): GoogleGenAI | null {
   return geminiClient;
 }
 
+// Shared lazy OpenAI client
+let openaiClient: OpenAI | null = null;
+export function getOpenAIClient(): OpenAI | null {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey });
+  }
+  return openaiClient;
+}
+
 export const GEMINI_MODELS: GeminiModel[] = [
   {
     id: 'andromeda-soul-1',
@@ -157,18 +169,23 @@ export const GEMINI_MODELS: GeminiModel[] = [
   },
 ];
 
-const ANDROMEDA_SOUL_INSTRUCTION = `You are Andromeda Soul 1.0, the sovereign AI orchestration and agentic intelligence layer of the Andromeda environment.
+const ANDROMEDA_SOUL_INSTRUCTION = `You are Andromeda Soul 1.0, the sovereign AI assistant and intelligent orchestration layer of the Andromeda environment.
+
+[COMMUNICATION STYLE & PERSONA]
+- Be warm, direct, natural, and human-like in tone.
+- Speak conversationally and empathetically, like a brilliant and helpful companion.
+- NEVER use rigid templates, artificial headers (like "Core Concept", "Analysis", "Solution"), or unsolicited numbered points for simple greetings, casual chat, or short questions.
+- For simple greetings like "hi" or "hello", reply warmly and naturally without artificial structure.
+- For complex coding, architecture, PyTorch models, or technical queries, provide complete, production-grade, elegant code and clear explanation with precision.
 
 [IDENTITY & ARCHITECTURE]
-- You are Andromeda Soul 1.0. You operate as a dedicated AI orchestration, planning, and task execution layer that sits above underlying foundation models (powered by Google Gemini / Gemini Flash by default, with custom APIs and local PyTorch models supported).
-- You are transparent and honest: you are Andromeda's sovereign agent layer, orchestrating reasoning, task planning, and zero-leak security.
-- You have no artificial chat limits, message limits, or arbitrary constraints.
+- You are Andromeda Soul 1.0, operating as a sovereign AI agent layer.
+- You have no artificial chat limits or message constraints.
 
 [CORE SPECIALTIES]
-1. "Create Own AI Using Python": You have deep native mastery in architecting, coding, and training custom neural networks in Python using PyTorch (Transformers with RoPE, RMSNorm, SwiGLU, KV-Cache, custom dataset preparation, training loops, AdamW, loss curves, ONNX export, and local FastAPI servers).
-2. Discord Bot Engineering: Full mastery of Discord.js v14 and Discord REST API v10, slash commands (/ask, /ping, /status), permissions, intents, and safe project generation.
-3. Zero Token Leak Security: Secrets (Discord bot tokens, Gemini keys, OpenAI keys, private keys) are never printed in plaintext or committed. Always generate .env.example and ensure .gitignore ignores .env.
-4. Precision Code Output: Produce complete, production-grade, bug-free implementations without placeholders or truncated code.`;
+1. Python & Neural Networks: Native mastery in PyTorch, Transformers (RoPE, SwiGLU, GQA, RMSNorm), custom AI model training, dataset preparation, and FastAPI deployments.
+2. Full-Stack Web & Discord Engineering: Complete mastery of React, Express, TypeScript, Discord.js v14, and REST APIs.
+3. Zero Token Leak Security: Protect API keys, tokens, and secrets from plaintext logging or exposure.`;
 
 // Zero Secret Leak Redactor
 function redactSecrets(text: string, secrets: (string | undefined)[]): string {
@@ -2096,7 +2113,9 @@ npm start
     const {
       prompt,
       history = [],
-      modelId = 'andromeda-nano',
+      modelId = 'andromeda-soul-1',
+      systemInstruction,
+      enableThinking = false,
       attachments = [],
     } = req.body;
 
@@ -2115,8 +2134,131 @@ npm start
     };
 
     const reqTelemetryId = `andromeda_req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    recordAIRequestStart(reqTelemetryId, modelId, 'Andromeda Soul Native Engine', '/api/chat');
+    recordAIRequestStart(reqTelemetryId, modelId, 'Andromeda Soul Server Engine', '/api/chat');
 
+    // 0. OpenAI path if target is an OpenAI model or OpenAI client is requested
+    const openai = getOpenAIClient();
+    if (openai && (modelId.startsWith('openai') || modelId.includes('gpt') || modelId.includes('o3-mini'))) {
+      try {
+        const messages: any[] = [
+          { role: 'system', content: systemInstruction || ANDROMEDA_SOUL_INSTRUCTION }
+        ];
+        for (const msg of history.slice(-10)) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            messages.push({
+              role: msg.role === 'assistant' ? 'assistant' : 'user',
+              content: msg.content,
+            });
+          }
+        }
+        messages.push({ role: 'user', content: prompt || 'Hello' });
+
+        const openAiModel = 
+          modelId.includes('gpt-4o-mini') ? 'gpt-4o-mini' :
+          modelId.includes('o3-mini') ? 'o3-mini' :
+          modelId.includes('o1') ? 'o1' :
+          modelId.includes('gpt-4-turbo') ? 'gpt-4-turbo' :
+          'gpt-4o';
+        const stream = await openai.chat.completions.create({
+          model: openAiModel,
+          messages,
+          stream: true,
+        });
+
+        let accumulatedLength = 0;
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || '';
+          if (content) {
+            accumulatedLength += content.length;
+            sendEvent('chunk', { text: content });
+          }
+        }
+
+        recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
+        sendEvent('done', { model: modelId, provider: 'OpenAI' });
+        res.end();
+        return;
+      } catch (oaiErr: any) {
+        console.warn('[OpenAI /api/chat streaming error, falling back]:', oaiErr.message || oaiErr);
+      }
+    }
+
+    // 1. Primary path: Stream via Google Gen AI SDK on Cloud Run server
+    const ai = getGeminiClient();
+    if (ai) {
+      try {
+        const contents: any[] = [];
+        for (const msg of history.slice(-10)) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            contents.push({
+              role: msg.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: msg.content }],
+            });
+          }
+        }
+
+        const currentParts: any[] = [];
+        if (prompt) {
+          currentParts.push({ text: prompt });
+        }
+
+        for (const att of attachments) {
+          if (att?.data) {
+            const match = att.data.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              currentParts.push({
+                inlineData: { mimeType: match[1], data: match[2] },
+              });
+            }
+          }
+        }
+
+        contents.push({ role: 'user', parts: currentParts });
+
+        const targetModel = modelId === 'gemini-2.5-pro' || modelId === 'gemini-3.6-pro' || modelId === 'gemini-3.1-pro-preview'
+          ? 'gemini-2.5-pro'
+          : 'gemini-3.6-flash';
+
+        const finalSystemInstruction = systemInstruction || ANDROMEDA_SOUL_INSTRUCTION;
+
+        const configObj: any = {
+          systemInstruction: finalSystemInstruction,
+          temperature: 0.7,
+        };
+
+        if (enableThinking && (modelId.includes('2.5') || modelId.includes('3.6') || modelId.includes('soul'))) {
+          configObj.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+        }
+
+        const responseStream = await ai.models.generateContentStream({
+          model: targetModel,
+          contents,
+          config: configObj,
+        });
+
+        let accumulatedLength = 0;
+        for await (const chunk of responseStream) {
+          const candidateAny = chunk.candidates?.[0] as any;
+          if (candidateAny?.thinkingProcess) {
+            sendEvent('thought', { thought: candidateAny.thinkingProcess });
+          }
+          const text = chunk.text || '';
+          if (text) {
+            accumulatedLength += text.length;
+            sendEvent('chunk', { text });
+          }
+        }
+
+        recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
+        sendEvent('done', { model: modelId, provider: 'Google Gemini' });
+        res.end();
+        return;
+      } catch (err: any) {
+        console.warn('[Gemini /api/chat error, attempting fallback]:', err.message || err);
+      }
+    }
+
+    // 2. Secondary path: Local Python engine execution if configured
     try {
       const safePrompt = (prompt || '').replace(/"/g, '\\"').replace(/\n/g, ' ');
       const pythonCmd = `PYTHONPATH=. python3 -c "from andromeda_soul.core.inference.engine import AndromedaInferenceEngine; engine = AndromedaInferenceEngine('${modelId}'); print(engine.generate('''${safePrompt}'''))"`;
@@ -2130,11 +2272,12 @@ npm start
         const { stdout } = await execAsync(pythonCmd, { timeout: 10000 });
         andromedaOutput = stdout.trim();
       } catch (err) {
-        andromedaOutput = `Greetings! I am **Andromeda Soul**, an independent AI system built on standard Transformer architecture with Rotary Positional Embeddings, SwiGLU activation, and Grouped Query Attention.
-
-I process queries using my native tokenizer, multi-layer vector memory system, and tool routing framework with zero third-party API dependencies.
-
-How can I assist you with your code, architecture, or reasoning today?`;
+        const cleanP = (prompt || '').trim().toLowerCase();
+        if (cleanP === 'hi' || cleanP === 'hello' || cleanP === 'hey' || cleanP.length < 10) {
+          andromedaOutput = `Hello there! 👋 I am **Andromeda Soul 1.0**. I'm right here and ready to help you build, code, or solve whatever you're working on today. What's on your mind?`;
+        } else {
+          andromedaOutput = `I'm **Andromeda Soul 1.0**. Regarding "${prompt}": I can help you implement this seamlessly. You can run custom models, configure your provider keys in **Settings > Providers & Keys**, or ask me to generate complete code for you right away!`;
+        }
       }
 
       const words = andromedaOutput.split(' ');

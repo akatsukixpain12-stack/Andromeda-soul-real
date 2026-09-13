@@ -143,6 +143,30 @@ export const AI_MODELS: AIModelOption[] = [
     intelligence: 'Frontier Reasoning',
     supportsThinking: true,
   },
+  {
+    id: 'openai-o1',
+    name: 'o1 (Full Reasoning)',
+    provider: 'openai',
+    providerLabel: 'OpenAI',
+    description: 'OpenAI’s premier reasoning model for deep analytical logic, science, and multi-step math.',
+    badge: 'Premier Reasoning',
+    isFree: false,
+    speed: 'Reasoning',
+    intelligence: 'Frontier Reasoning',
+    supportsThinking: true,
+  },
+  {
+    id: 'openai-gpt-4-turbo',
+    name: 'GPT-4 Turbo',
+    provider: 'openai',
+    providerLabel: 'OpenAI',
+    description: 'High-capacity production model with 128k context for large codebase analysis.',
+    badge: '128k Context',
+    isFree: false,
+    speed: 'Fast',
+    intelligence: 'Frontier',
+    supportsThinking: false,
+  },
 
   // --- ANTHROPIC CLAUDE MODELS ---
   {

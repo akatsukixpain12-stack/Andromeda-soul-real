@@ -20,6 +20,7 @@ import {
   Shield,
   User,
   LogOut,
+  Mail,
 } from 'lucide-react';
 import { Conversation, UserSettings, UserProfile } from '../types';
 import { UserAvatar } from './UserAvatar';
@@ -38,6 +39,7 @@ interface AndromedaSidebarProps {
   onOpenProviders: () => void;
   onOpenAuth?: () => void;
   onOpenKnowledgeModal?: () => void;
+  onExportGmail?: (conv: Conversation) => void;
   knowledgeCount?: number;
   onOpenMediaEngine?: () => void;
   onOpenTerminal?: () => void;
@@ -60,6 +62,7 @@ export const AndromedaSidebar: React.FC<AndromedaSidebarProps> = ({
   onOpenProviders,
   onOpenAuth,
   onOpenKnowledgeModal,
+  onExportGmail,
   knowledgeCount = 0,
   onOpenMediaEngine,
   onOpenTerminal,
@@ -193,14 +196,27 @@ export const AndromedaSidebar: React.FC<AndromedaSidebarProps> = ({
         {/* Action icons */}
         {!isEditing && (
           <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1 pl-1 transition-opacity">
+            {onExportGmail && (
+              <button
+                id={`gmail-chat-${conv.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExportGmail(conv);
+                }}
+                className="p-1.5 md:p-1 rounded-md hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                title="Save & Export to Gmail App"
+              >
+                <Mail className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               id={`pin-chat-${conv.id}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onTogglePinConversation(conv.id);
               }}
-              className={`p-1.5 md:p-1 rounded-md hover:bg-[#EAE7DE] text-[#78716C] transition-colors cursor-pointer ${
-                conv.pinned ? 'text-[#D97706]' : ''
+              className={`p-1.5 md:p-1 rounded-md hover:bg-slate-100 text-slate-400 transition-colors cursor-pointer ${
+                conv.pinned ? 'text-amber-600' : ''
               }`}
               title={conv.pinned ? 'Unpin' : 'Pin conversation'}
             >

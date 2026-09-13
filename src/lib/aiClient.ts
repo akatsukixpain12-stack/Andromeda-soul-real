@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import { ChatMessage, ChatAttachment, UserSettings, AIModelOption, LearnedKnowledge } from '../types';
 import { findModelById } from '../data/models';
 import {
@@ -105,10 +106,16 @@ export async function streamMultiProviderChat({
   }
   // OPENAI (Official or Custom)
   else if (provider === 'openai') {
-    const targetModel = modelMeta.customModelTag || (modelId === 'openai-o3-mini' ? 'o3-mini' : modelId === 'openai-gpt-4o-mini' ? 'gpt-4o-mini' : 'gpt-4o');
-    rawResponse = await streamOpenAICompatible({
-      endpoint: modelMeta.customBaseUrl || 'https://api.openai.com/v1/chat/completions',
-      apiKey: modelMeta.customApiKey || settings.openaiApiKey || '',
+    const targetModel = modelMeta.customModelTag || (
+      modelId === 'openai-o3-mini' ? 'o3-mini' :
+      modelId === 'openai-o1' ? 'o1' :
+      modelId === 'openai-gpt-4o-mini' ? 'gpt-4o-mini' :
+      modelId === 'openai-gpt-4-turbo' ? 'gpt-4-turbo' :
+      'gpt-4o'
+    );
+    const apiKey = modelMeta.customApiKey || settings.openaiApiKey || ((import.meta as any).env?.VITE_OPENAI_API_KEY as string) || '';
+    rawResponse = await streamOpenAI({
+      apiKey,
       modelName: targetModel,
       prompt: orchestrated.augmentedPrompt,
       history,
@@ -116,7 +123,7 @@ export async function streamMultiProviderChat({
       onToken,
       onThought,
       signal,
-      providerName: 'OpenAI',
+      baseUrl: modelMeta.customBaseUrl,
     });
   }
   // ANTHROPIC CLAUDE
@@ -469,6 +476,106 @@ async function streamLMStudio({
     const fallback = `⚠️ **Could Not Connect to LM Studio Local Server**\n\nUnable to reach LM Studio at \`${host}\`.\n\n### How to Run Free Models in LM Studio:\n1. Open **LM Studio** on your computer.\n2. Download any open model (e.g., Llama 3.3, DeepSeek-R1, Mistral, Qwen).\n3. Click on the **Developer / Local Server** tab (<-> icon on the left).\n4. Click **Start Server** on port 1234.\n5. Ensure **CORS** is enabled in the LM Studio server settings.\n\n*Or switch to **Andromeda Soul 1.0** in the top menu for immediate instant chat!*`;
 
     return streamTextSimulation(fallback, onToken, signal);
+  }
+}
+
+/**
+ * Safely initializes and returns an OpenAI client instance using user settings or env key
+ */
+export function getOpenAIClient(apiKey?: string, baseUrl?: string): OpenAI | null {
+  const processKey = typeof process !== 'undefined' && process.env ? process.env.OPENAI_API_KEY : '';
+  const key = apiKey || ((import.meta as any).env?.VITE_OPENAI_API_KEY as string) || processKey || '';
+  if (!key) return null;
+  return new OpenAI({
+    apiKey: key,
+    baseURL: baseUrl || undefined,
+    dangerouslyAllowBrowser: true,
+  });
+}
+
+/**
+ * Streams response using official OpenAI SDK client
+ */
+export async function streamOpenAI({
+  apiKey,
+  modelName,
+  prompt,
+  history,
+  systemInstruction,
+  onToken,
+  onThought,
+  signal,
+  baseUrl,
+}: {
+  apiKey: string;
+  modelName: string;
+  prompt: string;
+  history: ChatMessage[];
+  systemInstruction: string;
+  onToken: (token: string) => void;
+  onThought?: (thought: string) => void;
+  signal?: AbortSignal;
+  baseUrl?: string;
+}): Promise<string> {
+  const processKey = typeof process !== 'undefined' && process.env ? process.env.OPENAI_API_KEY : '';
+  const effectiveKey = apiKey || ((import.meta as any).env?.VITE_OPENAI_API_KEY as string) || processKey || '';
+
+  if (!effectiveKey) {
+    const msg = `⚠️ **OpenAI API Key Required**\n\nTo use **${modelName}**, please configure your OpenAI API key in **Settings > Providers & Keys** or set \`VITE_OPENAI_API_KEY\` in your environment.\n\n*You can switch to **Andromeda Soul 1.0** or **Google Gemini** to chat for free right now without an API key!*`;
+    return streamTextSimulation(msg, onToken, signal);
+  }
+
+  const messages: any[] = [];
+  if (systemInstruction) {
+    messages.push({ role: 'system', content: systemInstruction });
+  }
+  for (const m of history.slice(-8)) {
+    if (m.role === 'user' || m.role === 'assistant' || m.role === 'system') {
+      messages.push({ role: m.role, content: m.content });
+    }
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  let accumulated = '';
+  try {
+    const openai = new OpenAI({
+      apiKey: effectiveKey,
+      baseURL: baseUrl || undefined,
+      dangerouslyAllowBrowser: true,
+    });
+
+    const stream = await openai.chat.completions.create(
+      {
+        model: modelName,
+        messages,
+        stream: true,
+      },
+      { signal }
+    );
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      if (delta) {
+        accumulated += delta;
+        onToken(delta);
+      }
+    }
+    return accumulated;
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw err;
+    console.warn('[OpenAI SDK client stream warning, attempting proxy fallback]:', err);
+    return streamOpenAICompatible({
+      endpoint: baseUrl || 'https://api.openai.com/v1/chat/completions',
+      apiKey: effectiveKey,
+      modelName,
+      prompt,
+      history,
+      systemInstruction,
+      onToken,
+      onThought,
+      signal,
+      providerName: 'OpenAI',
+    });
   }
 }
 
