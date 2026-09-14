@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { ChatMessage, ChatAttachment, UserSettings, AIModelOption, LearnedKnowledge } from '../types';
 import { findModelById } from '../data/models';
 import { streamNVIDIA, DEFAULT_NVIDIA_MODEL } from './nvidiaClient';
+import { streamKimi, DEFAULT_KIMI_MODEL } from './kimiClient';
 import {
   understandRequest,
   executeTools,

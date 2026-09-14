@@ -2136,125 +2136,178 @@ npm start
     const reqTelemetryId = `andromeda_req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     recordAIRequestStart(reqTelemetryId, modelId, 'Andromeda Soul Server Engine', '/api/chat');
 
-    // -1. NVIDIA API Path for Andromeda Soul 1.0, 2.0, 2.1 & NVIDIA models (Nemotron 3.5 & Kimi K3)
-    const isKimi = modelId.includes('kimi') || modelId.includes('moonshot');
-    const nvApiKey = isKimi
-      ? (process.env.KIMI_API_KEY || process.env.NVIDIA_API_KEY || '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')
-      : (process.env.NVIDIA_API_KEY || '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');
+    // -1. NVIDIA / MOONSHOT KIMI / ANDROMEDA DUAL-ENGINE PATH WITH AUTOMATIC BUSY FAILOVER
+    const isExplicitKimi = modelId.includes('kimi') || modelId.includes('moonshot');
+    const isAndromedaOrNvidia = modelId.startsWith('andromeda') || modelId.includes('nvidia') || modelId.includes('nemotron') || isExplicitKimi;
 
-    if (nvApiKey && (modelId.startsWith('andromeda') || modelId.includes('nvidia') || modelId.includes('nemotron') || isKimi)) {
-      try {
-        const messages: any[] = [
-          { role: 'system', content: systemInstruction || ANDROMEDA_SOUL_INSTRUCTION }
-        ];
-        for (const msg of history.slice(-10)) {
-          if (msg.role === 'user' || msg.role === 'assistant') {
-            messages.push({
-              role: msg.role === 'assistant' ? 'assistant' : 'user',
-              content: msg.content,
+    if (isAndromedaOrNvidia) {
+      const NEMOTRON_KEY = process.env.NVIDIA_API_KEY || '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';
+      const KIMI_KEY = process.env.KIMI_API_KEY || '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';
+
+      // Build conversation messages
+      const messages: any[] = [
+        { role: 'system', content: systemInstruction || ANDROMEDA_SOUL_INSTRUCTION }
+      ];
+      for (const msg of history.slice(-10)) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({
+            role: msg.role === 'assistant' ? 'assistant' : 'user',
+            content: msg.content,
+          });
+        }
+      }
+
+      // Multimodal User Content
+      let userContent: any = prompt || 'Hello';
+      if (attachments && attachments.length > 0) {
+        const parts: any[] = [{ type: 'text', text: prompt || '' }];
+        for (const att of attachments) {
+          if (att.data && att.type?.startsWith('image/')) {
+            parts.push({
+              type: 'image_url',
+              image_url: { url: att.data },
             });
           }
         }
+        userContent = parts;
+      }
+      messages.push({ role: 'user', content: userContent });
 
-        // Multimodal User Content
-        let userContent: any = prompt || 'Hello';
-        if (attachments && attachments.length > 0) {
-          const parts: any[] = [{ type: 'text', text: prompt || '' }];
-          for (const att of attachments) {
-            if (att.data && att.type?.startsWith('image/')) {
-              parts.push({
-                type: 'image_url',
-                image_url: { url: att.data },
-              });
-            }
-          }
-          userContent = parts;
-        }
-        messages.push({ role: 'user', content: userContent });
-
-        const targetModel = isKimi ? 'moonshotai/kimi-k3' : 'nvidia/nemotron-3.5-lightning-30b-a3b';
-        const bodyPayload: any = isKimi
-          ? {
-              model: targetModel,
-              messages,
-              max_tokens: 16384,
-              seed: 0,
-              temperature: 1,
-              stream: true,
-              reasoning_effort: 'max',
-            }
-          : {
-              model: targetModel,
-              messages,
-              temperature: 1,
-              top_p: 0.95,
-              max_tokens: 16384,
-              extra_body: {
-                chat_template_kwargs: { enable_thinking: true },
-                reasoning_budget: 16384,
+      // If user selected Kimi, try Kimi first then Nemotron.
+      // If user selected Andromeda or Nemotron, try Nemotron first; if server is busy/failed, seamlessly failover to Moonshot Kimi K3!
+      const engineCandidates = isExplicitKimi
+        ? [
+            {
+              name: 'moonshotai/kimi-k3',
+              key: KIMI_KEY,
+              label: 'Moonshot Kimi K3',
+              payload: {
+                model: 'moonshotai/kimi-k3',
+                messages,
+                max_tokens: 16384,
+                seed: 0,
+                temperature: 1,
+                stream: true,
+                reasoning_effort: 'max',
               },
-              stream: true,
-            };
+            },
+            {
+              name: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+              key: NEMOTRON_KEY,
+              label: 'NVIDIA Nemotron 3.5 Lightning (Failover)',
+              payload: {
+                model: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+                messages,
+                temperature: 1,
+                top_p: 0.95,
+                max_tokens: 16384,
+                extra_body: {
+                  chat_template_kwargs: { enable_thinking: true },
+                  reasoning_budget: 16384,
+                },
+                stream: true,
+              },
+            },
+          ]
+        : [
+            {
+              name: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+              key: NEMOTRON_KEY,
+              label: 'NVIDIA Nemotron 3.5 Lightning',
+              payload: {
+                model: 'nvidia/nemotron-3.5-lightning-30b-a3b',
+                messages,
+                temperature: 1,
+                top_p: 0.95,
+                max_tokens: 16384,
+                extra_body: {
+                  chat_template_kwargs: { enable_thinking: true },
+                  reasoning_budget: 16384,
+                },
+                stream: true,
+              },
+            },
+            {
+              name: 'moonshotai/kimi-k3',
+              key: KIMI_KEY,
+              label: 'Moonshot Kimi K3 (Automatic Failover)',
+              payload: {
+                model: 'moonshotai/kimi-k3',
+                messages,
+                max_tokens: 16384,
+                seed: 0,
+                temperature: 1,
+                stream: true,
+                reasoning_effort: 'max',
+              },
+            },
+          ];
 
-        const nvRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${nvApiKey.trim()}`,
-            'Accept': 'text/event-stream',
-          },
-          body: JSON.stringify(bodyPayload),
-        });
+      for (const candidate of engineCandidates) {
+        if (!candidate.key) continue;
+        try {
+          const nvRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${candidate.key.trim()}`,
+              'Accept': 'text/event-stream',
+            },
+            body: JSON.stringify(candidate.payload),
+          });
 
-        if (nvRes.ok && nvRes.body) {
-          const reader = nvRes.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let accumulatedLength = 0;
+          if (nvRes.ok && nvRes.body) {
+            const reader = nvRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let accumulatedLength = 0;
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
 
-            for (const line of lines) {
-              const clean = line.trim();
-              if (clean.startsWith('data: ')) {
-                const dataStr = clean.slice(6).trim();
-                if (dataStr === '[DONE]') break;
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  const choice = parsed.choices?.[0];
-                  if (!choice) continue;
+              for (const line of lines) {
+                const clean = line.trim();
+                if (clean.startsWith('data: ')) {
+                  const dataStr = clean.slice(6).trim();
+                  if (dataStr === '[DONE]') break;
+                  try {
+                    const parsed = JSON.parse(dataStr);
+                    const choice = parsed.choices?.[0];
+                    if (!choice) continue;
 
-                  const delta = choice.delta || {};
-                  const reasoning = delta.reasoning_content || delta.thinking || choice.reasoning_content;
-                  if (reasoning) {
-                    sendEvent('thought', { thought: reasoning });
-                  }
+                    const delta = choice.delta || {};
+                    const reasoning = delta.reasoning_content || delta.thinking || choice.reasoning_content;
+                    if (reasoning) {
+                      sendEvent('thought', { thought: reasoning });
+                    }
 
-                  const text = delta.content || choice.text;
-                  if (text) {
-                    accumulatedLength += text.length;
-                    sendEvent('chunk', { text });
-                  }
-                } catch {}
+                    const text = delta.content || choice.text;
+                    if (text) {
+                      accumulatedLength += text.length;
+                      sendEvent('chunk', { text });
+                    }
+                  } catch {}
+                }
               }
             }
-          }
 
-          if (accumulatedLength > 0) {
-            recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
-            sendEvent('done', { model: modelId, provider: isKimi ? 'NVIDIA Kimi K3' : 'NVIDIA Nemotron 3.5' });
-            res.end();
-            return;
+            if (accumulatedLength > 0) {
+              recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
+              sendEvent('done', { model: modelId, provider: candidate.label });
+              res.end();
+              return;
+            }
+          } else {
+            console.warn(`[NVIDIA engine ${candidate.name} busy or HTTP ${nvRes.status}, falling back to next engine]`);
           }
+        } catch (nvErr: any) {
+          console.warn(`[NVIDIA engine ${candidate.name} error]:`, nvErr.message || nvErr);
         }
-      } catch (nvErr: any) {
-        console.warn('[NVIDIA API /api/chat error, falling back]:', nvErr.message || nvErr);
       }
     }
 
@@ -2530,17 +2583,49 @@ npm start
     res.end();
   });
 
-  // --- GOOGLE CLOUD CHAT SAVE SYSTEM ENDPOINTS ---
+  // --- GOOGLE CLOUD CHAT SAVE SYSTEM & GMAIL EXPORT ENDPOINTS ---
   app.post('/api/save-chat', (req: Request, res: Response) => {
     try {
-      const { chatId, title, messages } = req.body;
+      const { chatId, title, messages, userId } = req.body;
       const dataDir = path.join(process.cwd(), 'data', 'chats');
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
-      const filePath = path.join(dataDir, `${chatId || 'chat_' + Date.now()}.json`);
-      fs.writeFileSync(filePath, JSON.stringify({ chatId, title, messages, updatedAt: Date.now() }, null, 2));
-      return res.json({ status: 'success', chatId, filePath });
+      const safeChatId = chatId ? String(chatId).replace(/[^a-zA-Z0-9_-]/g, '_') : 'chat_' + Date.now();
+      const filePath = path.join(dataDir, `${safeChatId}.json`);
+      fs.writeFileSync(filePath, JSON.stringify({ chatId: safeChatId, userId: userId || 'anonymous', title: title || 'Andromeda Chat', messages: messages || [], updatedAt: Date.now() }, null, 2));
+      return res.json({ status: 'success', chatId: safeChatId, filePath, savedToGoogleCloud: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/export-to-gmail', (req: Request, res: Response) => {
+    try {
+      const { title, messages, userEmail } = req.body;
+      const chatTitle = title || 'Andromeda AI Transcript';
+      let plainText = `Transcript from Andromeda AI Studio\nConversation: ${chatTitle}\nDate: ${new Date().toISOString()}\n\n========================================\n\n`;
+
+      if (Array.isArray(messages)) {
+        for (const m of messages) {
+          const role = m.role === 'assistant' ? 'Andromeda Soul AI' : (m.role === 'user' ? 'User' : 'System');
+          plainText += `[${role}] (${new Date(m.timestamp || Date.now()).toLocaleTimeString()}):\n${m.content}\n\n----------------------------------------\n\n`;
+        }
+      }
+
+      // Generate Gmail compose web URL for instant 1-click email export
+      const subjectEncoded = encodeURIComponent(`[Andromeda Chat Backup] ${chatTitle}`);
+      const bodyEncoded = encodeURIComponent(plainText);
+      const toParam = userEmail ? encodeURIComponent(userEmail) : '';
+      const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=${toParam}&su=${subjectEncoded}&body=${bodyEncoded}`;
+
+      return res.json({
+        status: 'success',
+        title: chatTitle,
+        gmailComposeUrl,
+        transcript: plainText,
+        savedToGoogleCloud: true,
+      });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

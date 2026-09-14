@@ -88,6 +88,7 @@ export type AIProvider =
   | 'gemini'
   | 'andromeda'
   | 'nvidia'
+  | 'kimi'
   | 'openai'
   | 'anthropic'
   | 'requesty'

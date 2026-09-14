@@ -256,6 +256,26 @@ export function App() {
   const activeConversation = conversations.find((c) => c.id === activeConversationId) || conversations[0];
   const activeMessages = activeConversation ? activeConversation.messages : [];
 
+  // Helper to persist conversation to both Google Cloud Firestore and Google Cloud Server Storage
+  const persistConversationToCloud = (conv: Conversation) => {
+    if (!conv) return;
+    if (currentUser && currentUser.provider !== 'guest') {
+      dbSaveConversation(currentUser.id, conv).catch(console.error);
+    }
+    try {
+      fetch('/api/save-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId: conv.id,
+          title: conv.title,
+          messages: conv.messages,
+          userId: currentUser?.id,
+        }),
+      }).catch(() => {});
+    } catch {}
+  };
+
   // Create New Chat
   const handleNewChat = () => {
     if (isStreaming && abortControllerRef.current) {
@@ -276,10 +296,7 @@ export function App() {
 
     setConversations((prev) => [newConv, ...prev]);
     setActiveConversationId(newConv.id);
-
-    if (currentUser && currentUser.provider !== 'guest') {
-      dbSaveConversation(currentUser.id, newConv);
-    }
+    persistConversationToCloud(newConv);
   };
 
   // Delete Conversation
@@ -295,9 +312,7 @@ export function App() {
           updatedAt: Date.now(),
         };
         setActiveConversationId(fallback.id);
-        if (currentUser && currentUser.provider !== 'guest') {
-          dbSaveConversation(currentUser.id, fallback);
-        }
+        persistConversationToCloud(fallback);
         return [fallback];
       }
       if (activeConversationId === id) {
@@ -315,11 +330,9 @@ export function App() {
   const handleRenameConversation = (id: string, newTitle: string) => {
     setConversations((prev) => {
       const updated = prev.map((c) => (c.id === id ? { ...c, title: newTitle, updatedAt: Date.now() } : c));
-      if (currentUser && currentUser.provider !== 'guest') {
-        const target = updated.find((c) => c.id === id);
-        if (target) {
-          dbSaveConversation(currentUser.id, target);
-        }
+      const target = updated.find((c) => c.id === id);
+      if (target) {
+        persistConversationToCloud(target);
       }
       return updated;
     });
@@ -329,11 +342,9 @@ export function App() {
   const handleTogglePinConversation = (id: string) => {
     setConversations((prev) => {
       const updated = prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c));
-      if (currentUser && currentUser.provider !== 'guest') {
-        const target = updated.find((c) => c.id === id);
-        if (target) {
-          dbSaveConversation(currentUser.id, target);
-        }
+      const target = updated.find((c) => c.id === id);
+      if (target) {
+        persistConversationToCloud(target);
       }
       return updated;
     });
@@ -426,9 +437,7 @@ export function App() {
               messages: [...c.messages, userMessage],
               updatedAt: Date.now(),
             };
-            if (currentUser && currentUser.provider !== 'guest') {
-              dbSaveConversation(currentUser.id, updated);
-            }
+            persistConversationToCloud(updated);
             return updated;
           }
           return c;
@@ -482,9 +491,7 @@ export function App() {
               messages: [...c.messages, assistantMessage],
               updatedAt: Date.now(),
             };
-            if (currentUser && currentUser.provider !== 'guest') {
-              dbSaveConversation(currentUser.id, updated);
-            }
+            persistConversationToCloud(updated);
             return updated;
           }
           return c;
@@ -504,9 +511,7 @@ export function App() {
           prev.map((c) => {
             if (c.id === targetConvId) {
               const updated = { ...c, messages: [...c.messages, errorMessage] };
-              if (currentUser && currentUser.provider !== 'guest') {
-                dbSaveConversation(currentUser.id, updated);
-              }
+              persistConversationToCloud(updated);
               return updated;
             }
             return c;
@@ -554,10 +559,11 @@ export function App() {
     }
   };
 
-  // Export conversation transcript directly into Gmail App
+  // Export conversation transcript directly into Gmail App & Google Cloud
   const handleExportToGmail = (conversationToExport?: Conversation) => {
     const target = conversationToExport || activeConversation;
     if (!target) return;
+    persistConversationToCloud(target);
 
     const transcript = target.messages
       .map((m) => {
@@ -566,12 +572,12 @@ export function App() {
       })
       .join('\n----------------------------------------\n\n');
 
-    const subject = encodeURIComponent(`Andromeda Soul Chat: ${target.title}`);
+    const subject = encodeURIComponent(`[Andromeda Chat Backup] ${target.title}`);
     const body = encodeURIComponent(
-      `Andromeda Soul Conversation Transcript\nTitle: ${target.title}\nDate: ${new Date(target.createdAt).toLocaleString()}\n\n========================================\n\n${transcript}`
+      `Andromeda Soul Conversation Transcript\nTitle: ${target.title}\nDate: ${new Date(target.createdAt).toLocaleString()}\nSaved to Google Cloud: Yes\n\n========================================\n\n${transcript}`
     );
 
-    const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&tf=1&su=${subject}&body=${body}`;
+    const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=${encodeURIComponent(currentUser?.email || '')}&su=${subject}&body=${body}`;
     window.open(gmailComposeUrl, '_blank');
   };
 
