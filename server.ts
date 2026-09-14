@@ -2136,6 +2136,128 @@ npm start
     const reqTelemetryId = `andromeda_req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     recordAIRequestStart(reqTelemetryId, modelId, 'Andromeda Soul Server Engine', '/api/chat');
 
+    // -1. NVIDIA API Path for Andromeda Soul 1.0, 2.0, 2.1 & NVIDIA models (Nemotron 3.5 & Kimi K3)
+    const isKimi = modelId.includes('kimi') || modelId.includes('moonshot');
+    const nvApiKey = isKimi
+      ? (process.env.KIMI_API_KEY || process.env.NVIDIA_API_KEY || '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')
+      : (process.env.NVIDIA_API_KEY || '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');
+
+    if (nvApiKey && (modelId.startsWith('andromeda') || modelId.includes('nvidia') || modelId.includes('nemotron') || isKimi)) {
+      try {
+        const messages: any[] = [
+          { role: 'system', content: systemInstruction || ANDROMEDA_SOUL_INSTRUCTION }
+        ];
+        for (const msg of history.slice(-10)) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            messages.push({
+              role: msg.role === 'assistant' ? 'assistant' : 'user',
+              content: msg.content,
+            });
+          }
+        }
+
+        // Multimodal User Content
+        let userContent: any = prompt || 'Hello';
+        if (attachments && attachments.length > 0) {
+          const parts: any[] = [{ type: 'text', text: prompt || '' }];
+          for (const att of attachments) {
+            if (att.data && att.type?.startsWith('image/')) {
+              parts.push({
+                type: 'image_url',
+                image_url: { url: att.data },
+              });
+            }
+          }
+          userContent = parts;
+        }
+        messages.push({ role: 'user', content: userContent });
+
+        const targetModel = isKimi ? 'moonshotai/kimi-k3' : 'nvidia/nemotron-3.5-lightning-30b-a3b';
+        const bodyPayload: any = isKimi
+          ? {
+              model: targetModel,
+              messages,
+              max_tokens: 16384,
+              seed: 0,
+              temperature: 1,
+              stream: true,
+              reasoning_effort: 'max',
+            }
+          : {
+              model: targetModel,
+              messages,
+              temperature: 1,
+              top_p: 0.95,
+              max_tokens: 16384,
+              extra_body: {
+                chat_template_kwargs: { enable_thinking: true },
+                reasoning_budget: 16384,
+              },
+              stream: true,
+            };
+
+        const nvRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${nvApiKey.trim()}`,
+            'Accept': 'text/event-stream',
+          },
+          body: JSON.stringify(bodyPayload),
+        });
+
+        if (nvRes.ok && nvRes.body) {
+          const reader = nvRes.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let accumulatedLength = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const clean = line.trim();
+              if (clean.startsWith('data: ')) {
+                const dataStr = clean.slice(6).trim();
+                if (dataStr === '[DONE]') break;
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  const choice = parsed.choices?.[0];
+                  if (!choice) continue;
+
+                  const delta = choice.delta || {};
+                  const reasoning = delta.reasoning_content || delta.thinking || choice.reasoning_content;
+                  if (reasoning) {
+                    sendEvent('thought', { thought: reasoning });
+                  }
+
+                  const text = delta.content || choice.text;
+                  if (text) {
+                    accumulatedLength += text.length;
+                    sendEvent('chunk', { text });
+                  }
+                } catch {}
+              }
+            }
+          }
+
+          if (accumulatedLength > 0) {
+            recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
+            sendEvent('done', { model: modelId, provider: isKimi ? 'NVIDIA Kimi K3' : 'NVIDIA Nemotron 3.5' });
+            res.end();
+            return;
+          }
+        }
+      } catch (nvErr: any) {
+        console.warn('[NVIDIA API /api/chat error, falling back]:', nvErr.message || nvErr);
+      }
+    }
+
     // 0. OpenAI path if target is an OpenAI model or OpenAI client is requested
     const openai = getOpenAIClient();
     if (openai && (modelId.startsWith('openai') || modelId.includes('gpt') || modelId.includes('o3-mini'))) {
@@ -2215,87 +2337,197 @@ npm start
 
         contents.push({ role: 'user', parts: currentParts });
 
-        const targetModel = modelId === 'gemini-2.5-pro' || modelId === 'gemini-3.6-pro' || modelId === 'gemini-3.1-pro-preview'
-          ? 'gemini-2.5-pro'
-          : 'gemini-3.6-flash';
+        const candidateModels = (modelId.includes('pro'))
+          ? ['gemini-2.5-pro', 'gemini-3.6-pro']
+          : ['gemini-3.6-flash', 'gemini-2.5-pro'];
 
         const finalSystemInstruction = systemInstruction || ANDROMEDA_SOUL_INSTRUCTION;
+        let lastError: any = null;
+        let streamSuccess = false;
 
-        const configObj: any = {
-          systemInstruction: finalSystemInstruction,
-          temperature: 0.7,
-        };
+        for (const candidateModel of candidateModels) {
+          const configObj: any = {
+            systemInstruction: finalSystemInstruction,
+            temperature: 0.7,
+          };
 
-        if (enableThinking && (modelId.includes('2.5') || modelId.includes('3.6') || modelId.includes('soul'))) {
-          configObj.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+          if (enableThinking && (candidateModel.includes('2.5') || candidateModel.includes('3.6') || candidateModel.includes('soul'))) {
+            configObj.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+          }
+
+          try {
+            let accumulatedLength = 0;
+            let responseStream;
+
+            try {
+              responseStream = await ai.models.generateContentStream({
+                model: candidateModel,
+                contents,
+                config: configObj,
+              });
+            } catch (thinkErr: any) {
+              delete configObj.thinkingConfig;
+              responseStream = await ai.models.generateContentStream({
+                model: candidateModel,
+                contents,
+                config: configObj,
+              });
+            }
+
+            for await (const chunk of responseStream) {
+              const candidateAny = chunk.candidates?.[0] as any;
+              if (candidateAny?.thinkingProcess) {
+                sendEvent('thought', { thought: candidateAny.thinkingProcess });
+              }
+              const text = chunk.text || '';
+              if (text) {
+                accumulatedLength += text.length;
+                sendEvent('chunk', { text });
+              }
+            }
+
+            recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
+            sendEvent('done', { model: candidateModel, provider: 'Google Gemini' });
+            res.end();
+            streamSuccess = true;
+            return;
+          } catch (modelErr: any) {
+            lastError = modelErr;
+            const clean = extractCleanErrorMessage(modelErr);
+            console.warn(`[Gemini model ${candidateModel} rate limit or error, trying next candidate]:`, clean.message);
+          }
         }
 
-        const responseStream = await ai.models.generateContentStream({
-          model: targetModel,
-          contents,
-          config: configObj,
-        });
+        // High Availability Fallback 1: Requesty AI Universal Gateway
+        const requestyKey = process.env.REQUESTY_API_KEY || 'rqsty-sk-SAVSXqeyTN6Z2YdZ0+1w/NNISOkajhpXvZskzQ1JnIPEwW+NGOyNFs70lydbik3Tyyo5vauUKzcFk4j+dTBglDDjRg37IaPMOd0XAFa7Dgg=';
+        if (!streamSuccess && requestyKey) {
+          try {
+            const reqMessages: any[] = [{ role: 'system', content: finalSystemInstruction }];
+            for (const msg of history.slice(-10)) {
+              if (msg.role === 'user' || msg.role === 'assistant') {
+                reqMessages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content });
+              }
+            }
+            reqMessages.push({ role: 'user', content: prompt || 'Hello' });
 
-        let accumulatedLength = 0;
-        for await (const chunk of responseStream) {
-          const candidateAny = chunk.candidates?.[0] as any;
-          if (candidateAny?.thinkingProcess) {
-            sendEvent('thought', { thought: candidateAny.thinkingProcess });
-          }
-          const text = chunk.text || '';
-          if (text) {
-            accumulatedLength += text.length;
-            sendEvent('chunk', { text });
+            const reqRes = await fetch('https://router.requesty.ai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${requestyKey.trim()}`,
+              },
+              body: JSON.stringify({
+                model: 'openai/gpt-4o-mini',
+                messages: reqMessages,
+                stream: true,
+              }),
+            });
+
+            if (reqRes.ok && reqRes.body) {
+              const reader = reqRes.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = '';
+              let accumulatedLength = 0;
+
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                  const clean = line.trim();
+                  if (clean.startsWith('data: ')) {
+                    const dataStr = clean.slice(6);
+                    if (dataStr === '[DONE]') break;
+                    try {
+                      const parsed = JSON.parse(dataStr);
+                      const content = parsed.choices?.[0]?.delta?.content || '';
+                      if (content) {
+                        accumulatedLength += content.length;
+                        sendEvent('chunk', { text: content });
+                      }
+                    } catch {}
+                  }
+                }
+              }
+
+              if (accumulatedLength > 0) {
+                recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
+                sendEvent('done', { model: 'requesty-gpt-4o-mini', provider: 'Requesty AI Gateway' });
+                res.end();
+                return;
+              }
+            }
+          } catch (reqErr) {
+            console.warn('[Requesty fallback failed]:', reqErr);
           }
         }
 
-        recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
-        sendEvent('done', { model: modelId, provider: 'Google Gemini' });
+        // High Availability Fallback 2: Direct OpenAI Client
+        if (!streamSuccess && openai) {
+          try {
+            const oaiMessages: any[] = [{ role: 'system', content: finalSystemInstruction }];
+            for (const msg of history.slice(-10)) {
+              if (msg.role === 'user' || msg.role === 'assistant') {
+                oaiMessages.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.content });
+              }
+            }
+            oaiMessages.push({ role: 'user', content: prompt || 'Hello' });
+
+            const oaiStream = await openai.chat.completions.create({
+              model: 'gpt-4o-mini',
+              messages: oaiMessages,
+              stream: true,
+            });
+
+            let accumulatedLength = 0;
+            for await (const chunk of oaiStream) {
+              const content = chunk.choices[0]?.delta?.content || '';
+              if (content) {
+                accumulatedLength += content.length;
+                sendEvent('chunk', { text: content });
+              }
+            }
+            recordAIRequestEnd(reqTelemetryId, 'success', { bytes: accumulatedLength });
+            sendEvent('done', { model: 'gpt-4o-mini', provider: 'OpenAI Fallback' });
+            res.end();
+            return;
+          } catch (oaiErr) {
+            console.warn('[OpenAI fallback also failed]:', oaiErr);
+          }
+        }
+
+        // If all candidate models failed, format a clean friendly error message
+        const cleaned = extractCleanErrorMessage(lastError);
+        let userMessage = cleaned.message;
+
+        if (cleaned.code === 429) {
+          userMessage = `⏳ **Gemini Quota Exceeded (429)**\n\nYour request reached the free tier quota limit. Please wait ~30 seconds and try again, or add your personal API key in **Settings > Providers & Keys** for uncapped continuous streaming!`;
+        } else if (cleaned.code === 503) {
+          userMessage = `⚡ **Model High Demand (503)**\n\nGoogle AI servers are currently experiencing high traffic. Please wait a few seconds and send your message again.`;
+        }
+
+        recordAIRequestEnd(reqTelemetryId, 'failed', { error: userMessage });
+        sendEvent('chunk', { text: userMessage });
+        sendEvent('done', { model: modelId, error: userMessage });
         res.end();
         return;
       } catch (err: any) {
-        console.warn('[Gemini /api/chat error, attempting fallback]:', err.message || err);
+        console.error('[Gemini /api/chat error]:', err.message || err);
+        const cleaned = extractCleanErrorMessage(err);
+        sendEvent('chunk', { text: cleaned.message });
+        sendEvent('done', { model: modelId, error: cleaned.message });
+        res.end();
+        return;
       }
     }
 
-    // 2. Secondary path: Local Python engine execution if configured
-    try {
-      const safePrompt = (prompt || '').replace(/"/g, '\\"').replace(/\n/g, ' ');
-      const pythonCmd = `PYTHONPATH=. python3 -c "from andromeda_soul.core.inference.engine import AndromedaInferenceEngine; engine = AndromedaInferenceEngine('${modelId}'); print(engine.generate('''${safePrompt}'''))"`;
-      
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
-
-      let andromedaOutput = '';
-      try {
-        const { stdout } = await execAsync(pythonCmd, { timeout: 10000 });
-        andromedaOutput = stdout.trim();
-      } catch (err) {
-        const cleanP = (prompt || '').trim().toLowerCase();
-        if (cleanP === 'hi' || cleanP === 'hello' || cleanP === 'hey' || cleanP.length < 10) {
-          andromedaOutput = `Hello there! 👋 I am **Andromeda Soul 1.0**. I'm right here and ready to help you build, code, or solve whatever you're working on today. What's on your mind?`;
-        } else {
-          andromedaOutput = `I'm **Andromeda Soul 1.0**. Regarding "${prompt}": I can help you implement this seamlessly. You can run custom models, configure your provider keys in **Settings > Providers & Keys**, or ask me to generate complete code for you right away!`;
-        }
-      }
-
-      const words = andromedaOutput.split(' ');
-      for (let i = 0; i < words.length; i++) {
-        const word = words[i] + (i < words.length - 1 ? ' ' : '');
-        sendEvent('chunk', { text: word });
-        await new Promise((r) => setTimeout(r, 12));
-      }
-
-      recordAIRequestEnd(reqTelemetryId, 'success', { tokens: words.length, bytes: andromedaOutput.length });
-      sendEvent('done', { model: modelId, provider: 'Andromeda Soul Native System' });
-      res.end();
-    } catch (err: any) {
-      console.error('[Andromeda Soul Server Error]:', err);
-      recordAIRequestEnd(reqTelemetryId, 'failed', { error: err.message });
-      sendEvent('error', { message: err.message, canRetry: true });
-      res.end();
-    }
+    sendEvent('chunk', { text: `⚠️ **Server Gemini Key Notice**: Please configure your \`GEMINI_API_KEY\` or \`OPENAI_API_KEY\` in **Settings > Providers & Keys** to chat with **Andromeda Soul 1.0** and **Gemini 3.6 Flash**.` });
+    sendEvent('done', { model: modelId, status: 'no_key' });
+    res.end();
   });
 
   // --- GOOGLE CLOUD CHAT SAVE SYSTEM ENDPOINTS ---

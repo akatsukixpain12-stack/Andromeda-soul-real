@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import { ChatMessage, ChatAttachment, UserSettings, AIModelOption, LearnedKnowledge } from '../types';
 import { findModelById } from '../data/models';
+import { streamNVIDIA, DEFAULT_NVIDIA_MODEL } from './nvidiaClient';
 import {
   understandRequest,
   executeTools,
@@ -76,8 +77,24 @@ export async function streamMultiProviderChat({
 
   // 4. Route to specific Provider Engine
 
+  // NVIDIA API & ANDROMEDA SOUL 1.0, 2.0, 2.1 (ROUTED VIA SERVER /api/chat TO PREVENT CORS)
+  if (provider === 'nvidia' || provider === 'andromeda' || modelId.startsWith('andromeda')) {
+    rawResponse = await streamGeminiOrClaude({
+      prompt: orchestrated.augmentedPrompt,
+      history,
+      modelMeta,
+      modelId,
+      systemInstruction: orchestrated.systemPrompt,
+      enableThinking: enableThinking || modelMeta.supportsThinking || true,
+      attachments,
+      settings,
+      onToken,
+      onThought,
+      signal,
+    });
+  }
   // OLLAMA (Local & Free)
-  if (provider === 'ollama') {
+  else if (provider === 'ollama') {
     rawResponse = await streamOllama({
       prompt: orchestrated.augmentedPrompt,
       history,
@@ -124,6 +141,23 @@ export async function streamMultiProviderChat({
       onThought,
       signal,
       baseUrl: modelMeta.customBaseUrl,
+    });
+  }
+  // REQUESTY AI GATEWAY
+  else if (provider === 'requesty') {
+    const requestyKey = modelMeta.customApiKey || settings.customApiKey || ((import.meta as any).env?.VITE_REQUESTY_API_KEY as string) || 'rqsty-sk-SAVSXqeyTN6Z2YdZ0+1w/NNISOkajhpXvZskzQ1JnIPEwW+NGOyNFs70lydbik3Tyyo5vauUKzcFk4j+dTBglDDjRg37IaPMOd0XAFa7Dgg=';
+    const reqModel = modelId === 'requesty-claude-3-5-sonnet' ? 'anthropic/claude-3-5-sonnet' : modelId === 'requesty-gpt-4o' ? 'openai/gpt-4o' : 'openai/gpt-4o-mini';
+    rawResponse = await streamOpenAICompatible({
+      endpoint: 'https://router.requesty.ai/v1/chat/completions',
+      apiKey: requestyKey,
+      modelName: reqModel,
+      prompt: orchestrated.augmentedPrompt,
+      history,
+      systemInstruction: orchestrated.systemPrompt,
+      onToken,
+      onThought,
+      signal,
+      providerName: 'Requesty Gateway',
     });
   }
   // ANTHROPIC CLAUDE
@@ -878,7 +912,7 @@ async function streamGeminiOrClaude({
       body: JSON.stringify({
         prompt,
         history: history.slice(-10),
-        modelId: (modelId === 'andromeda-soul-1' || modelId.includes('gemini')) ? modelId : 'gemini-3.6-flash',
+        modelId: modelId || 'andromeda-soul-1',
         systemInstruction,
         enableThinking: effectiveThinking,
         attachments,

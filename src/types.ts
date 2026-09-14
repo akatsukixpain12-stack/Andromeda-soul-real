@@ -87,8 +87,10 @@ export interface Conversation {
 export type AIProvider =
   | 'gemini'
   | 'andromeda'
+  | 'nvidia'
   | 'openai'
   | 'anthropic'
+  | 'requesty'
   | 'deepseek'
   | 'groq'
   | 'openrouter'
