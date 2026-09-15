@@ -8,10 +8,20 @@ import { ImageCreationModal } from './components/ImageCreationModal';
 import { ConsoleModal } from './components/ConsoleModal';
 import { DiscordModal } from './components/DiscordModal';
 import { LearnedKnowledgeModal } from './components/LearnedKnowledgeModal';
+import { GitHubRepoModal } from './components/GitHubRepoModal';
+import { CommandPermissionCard } from './components/CommandPermissionCard';
 import { Conversation, ChatMessage, ChatAttachment, UserSettings, UserProfile, LearnedKnowledge } from './types';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import { streamMultiProviderChat } from './lib/aiClient';
 import { AI_MODELS, findModelById } from './data/models';
+import {
+  getSavedGitHubToken,
+  getSavedActiveRepo,
+  getSavedActiveBranch,
+  setSavedActiveRepo,
+  setSavedActiveBranch,
+  commitGitHubFile,
+} from './lib/githubClient';
 import {
   auth,
   dbSaveConversation,
@@ -23,9 +33,9 @@ import {
 } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-const STORAGE_KEY_CONVERSATIONS = 'andromeda_session_conversations_v5';
-const STORAGE_KEY_SETTINGS = 'andromeda_session_settings_v5';
-const STORAGE_KEY_USER_PROFILE = 'andromeda_user_profile_v4';
+const STORAGE_KEY_CONVERSATIONS = 'andromeda_saved_conversations_v6';
+const STORAGE_KEY_SETTINGS = 'andromeda_saved_settings_v6';
+const STORAGE_KEY_USER_PROFILE = 'andromeda_user_profile_v6';
 
 const createDefaultConversation = (): Conversation => ({
   id: `chat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -35,11 +45,24 @@ const createDefaultConversation = (): Conversation => ({
   updatedAt: Date.now(),
 });
 
+interface CommandPermissionRequest {
+  id: string;
+  command: string;
+  explanation?: string;
+  repo?: string;
+  filePath?: string;
+  content?: string;
+  commitMessage?: string;
+  onAllow: () => void;
+  onAlwaysAllow: () => void;
+  onDecline: () => void;
+}
+
 export function App() {
   // Load settings
   const [settings, setSettings] = useState<UserSettings>(() => {
     try {
-      const saved = sessionStorage.getItem(STORAGE_KEY_SETTINGS);
+      const saved = localStorage.getItem(STORAGE_KEY_SETTINGS) || sessionStorage.getItem('andromeda_session_settings_v5');
       return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
     } catch {
       return DEFAULT_SETTINGS;
@@ -52,10 +75,18 @@ export function App() {
   const [cloudSettingsReady, setCloudSettingsReady] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  // Conversations State
+  // GitHub State
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
+  const [activeGitHubRepo, setActiveGitHubRepo] = useState<string>(() => getSavedActiveRepo() || '');
+  const [activeGitHubBranch, setActiveGitHubBranch] = useState<string>(() => getSavedActiveBranch() || 'main');
+
+  // Command & Git Permission Request State (Allow, Always Allow, Decline)
+  const [permissionRequest, setPermissionRequest] = useState<CommandPermissionRequest | null>(null);
+
+  // Conversations State with reliable permanent localStorage & cloud persistence
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     try {
-      const saved = sessionStorage.getItem(STORAGE_KEY_CONVERSATIONS);
+      const saved = localStorage.getItem(STORAGE_KEY_CONVERSATIONS) || sessionStorage.getItem('andromeda_session_conversations_v5');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -110,26 +141,22 @@ export function App() {
   const [streamingThought, setStreamingThought] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Keep anonymous data in this browser tab only. Never expose it to another visitor.
+  // Reliable permanent storage of chats to prevent loss on refresh
   useEffect(() => {
-    if (!currentUser || currentUser.provider === 'guest') {
-      try {
-        sessionStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(conversations));
-      } catch (e) {
-        console.warn('Failed to persist session conversations:', e);
-      }
+    try {
+      localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(conversations));
+    } catch (e) {
+      console.warn('Failed to persist conversations to localStorage:', e);
     }
-  }, [conversations, currentUser]);
+  }, [conversations]);
 
   useEffect(() => {
-    if (!currentUser || currentUser.provider === 'guest') {
-      try {
-        sessionStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-      } catch (e) {
-        console.warn('Failed to persist session settings:', e);
-      }
+    try {
+      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+    } catch (e) {
+      console.warn('Failed to persist settings to localStorage:', e);
     }
-  }, [settings, currentUser]);
+  }, [settings]);
 
   // Preserve Firebase's durable Google auth session; guest data remains session-only.
   useEffect(() => {
@@ -393,7 +420,8 @@ export function App() {
   const handleSendMessage = async (
     prompt: string,
     attachments: ChatAttachment[] = [],
-    enableThinking: boolean = true
+    enableThinking: boolean = true,
+    thinkingLevel: 'low' | 'medium' | 'high' = 'high'
   ) => {
     if ((!prompt.trim() && attachments.length === 0) || isStreaming) return;
 
@@ -463,6 +491,7 @@ export function App() {
         modelId: selectedModelId,
         systemInstruction: settings.systemInstruction,
         enableThinking,
+        thinkingLevel,
         attachments,
         settings,
         onToken: (chunk: string) => {
@@ -650,9 +679,72 @@ export function App() {
           currentUser={currentUser}
           onOpenProvidersModal={() => setIsProvidersModalOpen(true)}
           onOpenDiscord={() => setIsDiscordModalOpen(true)}
+          onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
+          activeGitHubRepo={activeGitHubRepo}
           customModels={settings.customModels}
         />
       </div>
+
+      {/* 2.5 GitHub Repository & File Modifier Modal */}
+      <GitHubRepoModal
+        isOpen={isGitHubModalOpen}
+        onClose={() => setIsGitHubModalOpen(false)}
+        onInsertRepoContext={(repoName, filePath, content) => {
+          if (filePath && content) {
+            handleSendMessage(`📁 **GitHub File Context** [${repoName}/${filePath}]:\n\`\`\`\n${content.slice(0, 4000)}\n\`\`\`\n\nPlease help review or modify this file.`);
+          } else {
+            handleSendMessage(`Connected to GitHub repository: **${repoName}**. You can now request file inspections, modifications, and commits.`);
+          }
+        }}
+        onRequestCommandConfirmation={(action) => {
+          if (settings.commandPermissionMode === 'always_allow') {
+            action.onAllow();
+            return;
+          }
+          if (settings.commandPermissionMode === 'decline') {
+            alert('Action declined per your Security Settings (Command Permission: Always Decline).');
+            return;
+          }
+          setPermissionRequest({
+            id: `perm-${Date.now()}`,
+            command: action.details,
+            explanation: `GitHub Operation on repository: ${activeGitHubRepo || 'selected repo'}`,
+            onAllow: () => {
+              action.onAllow();
+              setPermissionRequest(null);
+            },
+            onAlwaysAllow: () => {
+              const updated = { ...settings, commandPermissionMode: 'always_allow' as const };
+              setSettings(updated);
+              localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(updated));
+              action.onAllow();
+              setPermissionRequest(null);
+            },
+            onDecline: () => {
+              setPermissionRequest(null);
+            },
+          });
+        }}
+      />
+
+      {/* Command & GitHub Permission Prompt Card Modal */}
+      {permissionRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-xl">
+            <CommandPermissionCard
+              request={{
+                id: permissionRequest.id,
+                type: 'github_commit',
+                title: 'Security Permission: Modify & Push to GitHub',
+                commandOrDetails: permissionRequest.command,
+                onAllow: permissionRequest.onAllow,
+                onAlwaysAllow: permissionRequest.onAlwaysAllow,
+                onDecline: permissionRequest.onDecline,
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 3. Providers & Settings Modal */}
       <ProvidersModal

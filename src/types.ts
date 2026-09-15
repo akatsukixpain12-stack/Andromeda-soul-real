@@ -82,6 +82,9 @@ export interface Conversation {
   pinned?: boolean;
   agentId?: string;
   projectId?: string;
+  thinkingLevel?: 'low' | 'medium' | 'high';
+  githubRepo?: string;
+  githubBranch?: string;
 }
 
 export type AIProvider =
@@ -143,6 +146,7 @@ export interface UserSettings {
   systemInstruction: string;
   temperature: number;
   enableThinking: boolean;
+  thinkingLevel?: 'low' | 'medium' | 'high';
   theme: 'dark' | 'light';
   defaultModelId: string;
   userName?: string;
@@ -151,6 +155,10 @@ export interface UserSettings {
   googleClientId?: string;
   customRole?: string;
   geminiApiKey?: string;
+  autoEmailBackup?: boolean;
+  activeGitHubRepo?: string;
+  activeGitHubBranch?: string;
+  commandPermissionMode?: 'ask' | 'always_allow' | 'decline';
   
   // Custom added AI models list
   customModels?: AIModelOption[];

@@ -25,6 +25,14 @@ import {
   RefreshCw,
   CheckCircle2,
   Cloud,
+  Plus,
+  Globe,
+  Compass,
+  FolderGit2,
+  Sliders,
+  PenTool,
+  SlidersHorizontal,
+  ExternalLink,
 } from 'lucide-react';
 import { ChatMessage, ChatAttachment, AIModelOption, UserProfile, LearnedKnowledge } from '../types';
 import { AI_MODELS, findModelById } from '../data/models';
@@ -33,13 +41,14 @@ import { createZipFromCode, triggerDownload } from '../lib/zipExporter';
 import { DiscordLiveChatModal } from './DiscordLiveChatModal';
 import { LearnedKnowledgeModal } from './LearnedKnowledgeModal';
 import { dbSaveLearnedKnowledge, dbSubscribeKnowledge } from '../lib/firebase';
+import { getSavedGitHubToken, getSavedActiveRepo } from '../lib/githubClient';
 
 interface AndromedaChatAreaProps {
   messages: ChatMessage[];
   streamingMessage: string;
   streamingThought?: string;
   isStreaming: boolean;
-  onSendMessage: (prompt: string, attachments?: ChatAttachment[], enableThinking?: boolean) => void;
+  onSendMessage: (prompt: string, attachments?: ChatAttachment[], enableThinking?: boolean, thinkingLevel?: 'low' | 'medium' | 'high') => void;
   onStopStreaming: () => void;
   onRegenerate: () => void;
   onClearChat: () => void;
@@ -51,6 +60,8 @@ interface AndromedaChatAreaProps {
   onEditMessage?: (content: string) => void;
   onOpenProvidersModal: () => void;
   onOpenDiscord?: () => void;
+  onOpenGitHubModal?: () => void;
+  activeGitHubRepo?: string;
   customModels?: AIModelOption[];
 }
 
@@ -68,11 +79,21 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
   currentUser,
   onOpenProvidersModal,
   onOpenDiscord,
+  onOpenGitHubModal,
+  activeGitHubRepo,
   customModels = [],
 }) => {
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isThinkingEnabled, setIsThinkingEnabled] = useState(true);
+  const [thinkingLevel, setThinkingLevel] = useState<'low' | 'medium' | 'high'>('high');
+  const [isHoveringThinking, setIsHoveringThinking] = useState(false);
+  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const [isWebSearchActive, setIsWebSearchActive] = useState(true);
+  const [isDeepResearchActive, setIsDeepResearchActive] = useState(false);
+  const [hasGitHubToken, setHasGitHubToken] = useState(() => !!getSavedGitHubToken());
+  const [activeRepo, setActiveRepo] = useState(() => activeGitHubRepo || getSavedActiveRepo());
+
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [copiedCodeKey, setCopiedCodeKey] = useState<string | null>(null);
   const [zippingCodeKey, setZippingCodeKey] = useState<string | null>(null);
@@ -94,8 +115,28 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
 
   const currentModel = findModelById(selectedModelId, customModels);
+
+  // Update token & repo state
+  useEffect(() => {
+    setHasGitHubToken(!!getSavedGitHubToken());
+    setActiveRepo(activeGitHubRepo || getSavedActiveRepo());
+  }, [activeGitHubRepo, isPlusMenuOpen]);
+
+  // Close plus menu on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (plusMenuRef.current && !plusMenuRef.current.contains(e.target as Node)) {
+        setIsPlusMenuOpen(false);
+      }
+    };
+    if (isPlusMenuOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isPlusMenuOpen]);
 
   // Subscribe to Cloud Learned Knowledge for this user
   useEffect(() => {
@@ -138,7 +179,7 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
 
     if ((!cleanPrompt && attachments.length === 0) || isStreaming) return;
 
-    onSendMessage(cleanPrompt, attachments, isThinkingEnabled);
+    onSendMessage(cleanPrompt, attachments, isThinkingEnabled, thinkingLevel);
     setInputText('');
     setAttachments([]);
     if (textareaRef.current) {
@@ -707,7 +748,171 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
           )}
 
           {/* Unified Bouncy Input Card */}
-          <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xl shadow-slate-200/40 focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-100/60 transition-all overflow-hidden">
+          <div className="relative rounded-2xl border border-slate-200/90 bg-white shadow-xl shadow-slate-200/40 focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-100/60 transition-all overflow-visible">
+            
+            {/* ChatGPT-Style Plus Tool Menu Popup */}
+            {isPlusMenuOpen && (
+              <div
+                ref={plusMenuRef}
+                className="absolute bottom-full left-2 mb-2 w-64 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 text-slate-800 dark:text-slate-100 animate-in fade-in slide-in-from-bottom-2 duration-150 space-y-0.5"
+              >
+                {/* 1. Sketch */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    setInputText('/image A futuristic glowing cityscape with cybernetic architecture, neon reflections, 8k masterpiece');
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer text-left"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-orange-500/10 text-orange-600 flex items-center justify-center">
+                    <PenTool className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-bold">Sketch / Canvas</div>
+                    <div className="text-[10px] text-slate-400 font-normal">Generate or draw image & UI</div>
+                  </div>
+                </button>
+
+                {/* 2. Thinking */}
+                <div
+                  onMouseEnter={() => setIsHoveringThinking(true)}
+                  onMouseLeave={() => setIsHoveringThinking(false)}
+                  className="relative"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setIsThinkingEnabled(!isThinkingEnabled)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                        <Brain className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="font-bold">Thinking</div>
+                        <div className="text-[10px] text-slate-400 font-normal capitalize">Level: {thinkingLevel}</div>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  </button>
+
+                  {/* Thinking Sub-menu on Hover / Toggle */}
+                  {isHoveringThinking && (
+                    <div className="absolute left-full top-0 ml-1.5 w-44 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 space-y-1">
+                      {(['low', 'medium', 'high'] as const).map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => {
+                            setThinkingLevel(lvl);
+                            setIsThinkingEnabled(true);
+                            setIsHoveringThinking(false);
+                            setIsPlusMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                            thinkingLevel === lvl && isThinkingEnabled
+                              ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 font-bold'
+                              : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          <div className="capitalize">{lvl}</div>
+                          {thinkingLevel === lvl && isThinkingEnabled && (
+                            <Check className="w-3 h-3 text-amber-600" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Web search */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsWebSearchActive(!isWebSearchActive);
+                    setIsPlusMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center">
+                      <Globe className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-bold">Web search</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Real-time web grounding</div>
+                    </div>
+                  </div>
+                  {isWebSearchActive && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                </button>
+
+                {/* 4. Deep research */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDeepResearchActive(!isDeepResearchActive);
+                    setIsPlusMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+                      <Compass className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-bold">Deep research</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Multi-step deep synthesis</div>
+                    </div>
+                  </div>
+                  {isDeepResearchActive && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                </button>
+
+                {/* 5. GitHub (with checkmark when connected) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    if (onOpenGitHubModal) onOpenGitHubModal();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-900/10 text-zinc-900 dark:text-zinc-100 flex items-center justify-center">
+                      <FolderGit2 className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-bold">GitHub</div>
+                      <div className="text-[10px] text-slate-400 font-normal">
+                        {activeRepo ? `Active: ${activeRepo}` : 'Modify & push commits'}
+                      </div>
+                    </div>
+                  </div>
+                  {hasGitHubToken && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                </button>
+
+                {/* 6. OpenAI Platform / Providers */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlusMenuOpen(false);
+                    onOpenProvidersModal();
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer text-left border-t border-slate-100 dark:border-slate-800/80 pt-1.5"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                      <Sliders className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-bold">Providers & Keys</div>
+                      <div className="text-[10px] text-slate-400 font-normal">NVIDIA, Gemini, OpenAI</div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+
             <textarea
               id="andromeda-chat-input"
               ref={textareaRef}
@@ -722,6 +927,20 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
             {/* Bottom Actions Toolbar inside Card */}
             <div className="flex items-center justify-between px-3 py-2 bg-slate-50/60 border-t border-slate-100">
               <div className="flex items-center gap-1 sm:gap-2">
+                
+                {/* 1. ChatGPT-Style Plus Tool Button */}
+                <button
+                  id="plus-tools-menu-button"
+                  type="button"
+                  onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
+                  className={`p-2 sm:p-1.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all cursor-pointer bouncy-btn ${
+                    isPlusMenuOpen ? 'bg-slate-200 text-slate-900' : ''
+                  }`}
+                  title="Tools (Sketch, Thinking, Search, GitHub, Providers)"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -741,23 +960,66 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
                   <Paperclip className="w-4 h-4" />
                 </button>
 
-                {/* Extended Thinking Toggle */}
-                <button
-                  id="toggle-thinking-button"
-                  type="button"
-                  onClick={() => setIsThinkingEnabled(!isThinkingEnabled)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-semibold transition-all cursor-pointer bouncy-btn ${
-                    isThinkingEnabled
-                      ? 'bg-amber-50 text-amber-900 border border-amber-200/90 shadow-2xs'
-                      : 'text-slate-500 hover:bg-white hover:text-slate-900 border border-transparent'
-                  }`}
-                  title="Toggle Extended Thinking Reasoner"
+                {/* Extended Thinking Switch with Hover Slider for Low, Medium, High */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => setIsHoveringThinking(true)}
+                  onMouseLeave={() => setIsHoveringThinking(false)}
                 >
-                  <Brain className={`w-3.5 h-3.5 ${isThinkingEnabled ? 'text-amber-600' : 'text-slate-400'}`} />
-                  <span>
-                    {isThinkingEnabled ? 'Thinking ON' : 'Thinking OFF'}
-                  </span>
-                </button>
+                  <button
+                    id="toggle-thinking-button"
+                    type="button"
+                    onClick={() => setIsThinkingEnabled(!isThinkingEnabled)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-semibold transition-all cursor-pointer bouncy-btn ${
+                      isThinkingEnabled
+                        ? 'bg-amber-50 text-amber-900 border border-amber-200/90 shadow-2xs'
+                        : 'text-slate-500 hover:bg-white hover:text-slate-900 border border-transparent'
+                    }`}
+                    title="Hover to switch Thinking budget (Low, Medium, High)"
+                  >
+                    <Brain className={`w-3.5 h-3.5 ${isThinkingEnabled ? 'text-amber-600' : 'text-slate-400'}`} />
+                    <span>
+                      {isThinkingEnabled ? `Thinking (${thinkingLevel.toUpperCase()})` : 'Thinking OFF'}
+                    </span>
+                  </button>
+
+                  {/* Hover Floating Level Switch */}
+                  {isHoveringThinking && (
+                    <div className="absolute bottom-full left-0 mb-1.5 flex items-center p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full shadow-lg z-50 text-xs font-medium animate-in fade-in duration-100">
+                      {(['low', 'medium', 'high'] as const).map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setThinkingLevel(lvl);
+                            setIsThinkingEnabled(true);
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-bold capitalize transition-all cursor-pointer ${
+                            thinkingLevel === lvl && isThinkingEnabled
+                              ? 'bg-amber-500 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          {lvl}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* GitHub Active Repo Pill */}
+                {activeRepo && (
+                  <button
+                    type="button"
+                    onClick={onOpenGitHubModal}
+                    className="hidden lg:flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-zinc-900 text-white hover:bg-zinc-800 transition-all cursor-pointer"
+                    title="Manage repository files and push commits"
+                  >
+                    <FolderGit2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="truncate max-w-[130px]">{activeRepo}</span>
+                  </button>
+                )}
 
                 {/* Model badge quick link */}
                 <button
@@ -801,7 +1063,7 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
           </div>
 
           <div className="mt-2 text-center text-[10px] sm:text-[11px] text-slate-400">
-            Powered by Andromeda Soul Engine & Google Cloud persistence.
+            Powered by Andromeda Soul Engine, GitHub integration & Google Cloud persistence.
           </div>
         </div>
       </motion.div>

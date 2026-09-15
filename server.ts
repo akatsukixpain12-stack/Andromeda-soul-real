@@ -1243,6 +1243,256 @@ npm start
     }
   });
 
+  // Get branches for a specific repository
+  app.get('/api/github/branches', async (req: Request, res: Response) => {
+    const stored = db.getRawDiscordTokens();
+    const token = (req.query.token as string) || stored.githubToken;
+    const repo = req.query.repo as string;
+
+    if (!token || token === '••••••••••••••••') {
+      return res.status(400).json({ success: false, error: 'No GitHub token configured.' });
+    }
+    if (!repo || !repo.includes('/')) {
+      return res.status(400).json({ success: false, error: 'Valid repository (owner/repo) is required.' });
+    }
+
+    try {
+      const [owner, repoName] = repo.split('/');
+      const response = await fetch(`https://api.github.com/repos/${owner}/${repoName}/branches?per_page=50`, {
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'Andromeda-Soul-1',
+        },
+      });
+
+      if (!response.ok) {
+        const errData: any = await response.json().catch(() => ({}));
+        return res.status(response.status).json({
+          success: false,
+          error: errData.message || 'Failed to retrieve repository branches.',
+        });
+      }
+
+      const branches = await response.json();
+      res.json({
+        success: true,
+        branches: branches.map((b: any) => ({ name: b.name, commitSha: b.commit?.sha })),
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to fetch branches.' });
+    }
+  });
+
+  // Get repository file tree
+  app.get('/api/github/tree', async (req: Request, res: Response) => {
+    const stored = db.getRawDiscordTokens();
+    const token = (req.query.token as string) || stored.githubToken;
+    const repo = req.query.repo as string;
+    const branch = (req.query.branch as string) || 'main';
+    const pathQuery = (req.query.path as string) || '';
+
+    if (!token || token === '••••••••••••••••') {
+      return res.status(400).json({ success: false, error: 'No GitHub token configured.' });
+    }
+    if (!repo || !repo.includes('/')) {
+      return res.status(400).json({ success: false, error: 'Valid repository (owner/repo) is required.' });
+    }
+
+    try {
+      const [owner, repoName] = repo.split('/');
+      const url = pathQuery
+        ? `https://api.github.com/repos/${owner}/${repoName}/contents/${encodeURIComponent(pathQuery.replace(/^\/+/, '')).replace(/%2F/g, '/')}?ref=${encodeURIComponent(branch)}`
+        : `https://api.github.com/repos/${owner}/${repoName}/contents?ref=${encodeURIComponent(branch)}`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'Andromeda-Soul-1',
+        },
+      });
+
+      if (!response.ok) {
+        const errData: any = await response.json().catch(() => ({}));
+        return res.status(response.status).json({
+          success: false,
+          error: errData.message || 'Failed to retrieve repository files.',
+        });
+      }
+
+      const items = await response.json();
+      const files = Array.isArray(items)
+        ? items.map((i: any) => ({
+            name: i.name,
+            path: i.path,
+            type: i.type, // 'file' | 'dir'
+            size: i.size,
+            sha: i.sha,
+            html_url: i.html_url,
+            download_url: i.download_url,
+          }))
+        : [{
+            name: items.name,
+            path: items.path,
+            type: items.type,
+            size: items.size,
+            sha: items.sha,
+            html_url: items.html_url,
+            download_url: items.download_url,
+          }];
+
+      res.json({ success: true, files, branch });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to fetch repo contents.' });
+    }
+  });
+
+  // Get specific file content from repository
+  app.get('/api/github/file', async (req: Request, res: Response) => {
+    const stored = db.getRawDiscordTokens();
+    const token = (req.query.token as string) || stored.githubToken;
+    const repo = req.query.repo as string;
+    const filePath = req.query.path as string;
+    const branch = (req.query.branch as string) || 'main';
+
+    if (!token || token === '••••••••••••••••') {
+      return res.status(400).json({ success: false, error: 'No GitHub token configured.' });
+    }
+    if (!repo || !filePath) {
+      return res.status(400).json({ success: false, error: 'Repository and file path are required.' });
+    }
+
+    try {
+      const [owner, repoName] = repo.split('/');
+      const cleanPath = filePath.replace(/^\/+/, '');
+      const response = await fetch(
+        `https://api.github.com/repos/${owner}/${repoName}/contents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}?ref=${encodeURIComponent(branch)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token.trim()}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'Andromeda-Soul-1',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errData: any = await response.json().catch(() => ({}));
+        return res.status(response.status).json({
+          success: false,
+          error: errData.message || `Failed to fetch file ${filePath}.`,
+        });
+      }
+
+      const fileData: any = await response.json();
+      let content = '';
+      if (fileData.encoding === 'base64' && fileData.content) {
+        content = Buffer.from(fileData.content, 'base64').toString('utf-8');
+      }
+
+      res.json({
+        success: true,
+        name: fileData.name,
+        path: fileData.path,
+        sha: fileData.sha,
+        size: fileData.size,
+        content,
+        html_url: fileData.html_url,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to read file from GitHub.' });
+    }
+  });
+
+  // Modify or create file in GitHub and commit/push directly
+  app.post('/api/github/commit-file', async (req: Request, res: Response) => {
+    const {
+      repo,
+      branch = 'main',
+      path: filePath,
+      content,
+      commitMessage,
+      sha,
+      githubToken,
+    } = req.body;
+
+    const stored = db.getRawDiscordTokens();
+    const token = (githubToken && githubToken !== '••••••••••••••••') ? githubToken : stored.githubToken;
+
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'GitHub Personal Access Token is required.' });
+    }
+    if (!repo || !filePath || content === undefined) {
+      return res.status(400).json({ success: false, error: 'Repo, file path, and content are required.' });
+    }
+
+    const [owner, repoName] = repo.split('/');
+    const cleanPath = filePath.replace(/^\/+/, '');
+
+    try {
+      // If sha is not passed, fetch existing file sha
+      let existingSha = sha;
+      if (!existingSha) {
+        try {
+          const checkRes = await fetch(
+            `https://api.github.com/repos/${owner}/${repoName}/contents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}?ref=${encodeURIComponent(branch)}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token.trim()}`,
+                Accept: 'application/vnd.github.v3+json',
+                'User-Agent': 'Andromeda-Soul-1',
+              },
+            }
+          );
+          if (checkRes.ok) {
+            const fileInfo: any = await checkRes.json();
+            existingSha = fileInfo.sha;
+          }
+        } catch {}
+      }
+
+      const putRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repoName}/contents/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token.trim()}`,
+            Accept: 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Andromeda-Soul-1',
+          },
+          body: JSON.stringify({
+            message: commitMessage || `Update ${cleanPath} via Andromeda Soul`,
+            content: Buffer.from(String(content), 'utf-8').toString('base64'),
+            branch,
+            ...(existingSha ? { sha: existingSha } : {}),
+          }),
+        }
+      );
+
+      if (!putRes.ok) {
+        const errData: any = await putRes.json().catch(() => ({}));
+        return res.status(putRes.status).json({
+          success: false,
+          error: errData.message || `Failed to commit changes to ${cleanPath}.`,
+        });
+      }
+
+      const commitResult: any = await putRes.json();
+      res.json({
+        success: true,
+        filePath: cleanPath,
+        commitSha: commitResult.commit?.sha,
+        commitUrl: commitResult.commit?.html_url,
+        fileUrl: commitResult.content?.html_url,
+        message: `Successfully pushed commit to ${owner}/${repoName} on branch ${branch}!`,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to commit file to GitHub.' });
+    }
+  });
+
   // Push an entire folder of files to selected GitHub repo
   app.post('/api/github/push-folder', async (req: Request, res: Response) => {
     const {
@@ -2115,13 +2365,18 @@ npm start
       history = [],
       modelId = 'andromeda-soul-1',
       systemInstruction,
-      enableThinking = false,
+      enableThinking = true,
+      thinkingLevel = 'high',
       attachments = [],
     } = req.body;
 
     if (!prompt && (!attachments || attachments.length === 0)) {
       return res.status(400).json({ error: 'Prompt or attachment is required.' });
     }
+
+    // Dynamic reasoning token budget based on hover switch level (low, medium, high)
+    const reasoningBudget = thinkingLevel === 'low' ? 2048 : thinkingLevel === 'medium' ? 8192 : 16384;
+    const reasoningEffort = thinkingLevel === 'low' ? 'low' : thinkingLevel === 'medium' ? 'medium' : 'max';
 
     // Set up SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -2188,7 +2443,7 @@ npm start
                 seed: 0,
                 temperature: 1,
                 stream: true,
-                reasoning_effort: 'max',
+                reasoning_effort: reasoningEffort,
               },
             },
             {
@@ -2202,8 +2457,8 @@ npm start
                 top_p: 0.95,
                 max_tokens: 16384,
                 extra_body: {
-                  chat_template_kwargs: { enable_thinking: true },
-                  reasoning_budget: 16384,
+                  chat_template_kwargs: { enable_thinking: enableThinking },
+                  reasoning_budget: enableThinking ? reasoningBudget : 0,
                 },
                 stream: true,
               },
@@ -2221,8 +2476,8 @@ npm start
                 top_p: 0.95,
                 max_tokens: 16384,
                 extra_body: {
-                  chat_template_kwargs: { enable_thinking: true },
-                  reasoning_budget: 16384,
+                  chat_template_kwargs: { enable_thinking: enableThinking },
+                  reasoning_budget: enableThinking ? reasoningBudget : 0,
                 },
                 stream: true,
               },
@@ -2238,7 +2493,7 @@ npm start
                 seed: 0,
                 temperature: 1,
                 stream: true,
-                reasoning_effort: 'max',
+                reasoning_effort: reasoningEffort,
               },
             },
           ];

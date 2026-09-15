@@ -318,19 +318,6 @@ export const AndromedaNavbar: React.FC<AndromedaNavbarProps> = ({
             <span className="hidden md:inline">Fleet</span>
           </button>
 
-          {/* Export to Gmail App button */}
-          {onExportGmail && (
-            <button
-              id="navbar-gmail-export-button"
-              onClick={onExportGmail}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-rose-700 bg-rose-50/70 hover:bg-rose-100/80 border border-rose-200/80 transition-all cursor-pointer bouncy-btn"
-              title="Save & Export conversation directly to Gmail App"
-            >
-              <Mail className="w-3.5 h-3.5 text-rose-600" />
-              <span className="hidden xl:inline">Save to Gmail</span>
-            </button>
-          )}
-
           {/* Google Auth / User Identity button */}
           <button
             id="navbar-google-auth-button"

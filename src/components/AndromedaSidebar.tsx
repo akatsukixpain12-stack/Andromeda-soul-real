@@ -196,19 +196,6 @@ export const AndromedaSidebar: React.FC<AndromedaSidebarProps> = ({
         {/* Action icons */}
         {!isEditing && (
           <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1 pl-1 transition-opacity">
-            {onExportGmail && (
-              <button
-                id={`gmail-chat-${conv.id}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onExportGmail(conv);
-                }}
-                className="p-1.5 md:p-1 rounded-md hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                title="Save & Export to Gmail App"
-              >
-                <Mail className="w-3.5 h-3.5" />
-              </button>
-            )}
             <button
               id={`pin-chat-${conv.id}`}
               onClick={(e) => {

@@ -18,6 +18,7 @@ export interface StreamChatParams {
   modelId: string;
   systemInstruction: string;
   enableThinking: boolean;
+  thinkingLevel?: 'low' | 'medium' | 'high';
   attachments?: ChatAttachment[];
   settings: UserSettings;
   learnedKnowledge?: LearnedKnowledge[];
@@ -37,6 +38,7 @@ export async function streamMultiProviderChat({
   modelId,
   systemInstruction,
   enableThinking,
+  thinkingLevel = 'high',
   attachments = [],
   settings,
   learnedKnowledge = [],
@@ -87,6 +89,7 @@ export async function streamMultiProviderChat({
       modelId,
       systemInstruction: orchestrated.systemPrompt,
       enableThinking: enableThinking || modelMeta.supportsThinking || true,
+      thinkingLevel,
       attachments,
       settings,
       onToken,
@@ -882,6 +885,7 @@ async function streamGeminiOrClaude({
   modelMeta,
   systemInstruction,
   enableThinking,
+  thinkingLevel = 'high',
   attachments,
   settings,
   onToken,
@@ -894,6 +898,7 @@ async function streamGeminiOrClaude({
   modelMeta: AIModelOption;
   systemInstruction: string;
   enableThinking: boolean;
+  thinkingLevel?: 'low' | 'medium' | 'high';
   attachments: ChatAttachment[];
   settings: UserSettings;
   onToken: (token: string) => void;
@@ -916,6 +921,7 @@ async function streamGeminiOrClaude({
         modelId: modelId || 'andromeda-soul-1',
         systemInstruction,
         enableThinking: effectiveThinking,
+        thinkingLevel,
         attachments,
       }),
       signal,
