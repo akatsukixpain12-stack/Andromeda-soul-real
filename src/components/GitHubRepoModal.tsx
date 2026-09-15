@@ -18,7 +18,12 @@ import {
   AlertCircle,
   FileText,
   Play,
-  ArrowLeft
+  ArrowLeft,
+  Lock,
+  Eye,
+  EyeOff,
+  Sparkles,
+  LogIn
 } from 'lucide-react';
 import {
   GitHubRepo,
@@ -36,11 +41,15 @@ import {
   saveActiveRepo,
   getSavedActiveBranch,
   saveActiveBranch,
+  maskToken,
 } from '../lib/githubClient';
+import { UserProfile } from '../types';
 
 interface GitHubRepoModalProps {
   isOpen: boolean;
   onClose: () => void;
+  currentUser?: UserProfile | null;
+  onOpenAuthModal?: () => void;
   onInsertRepoContext?: (repoName: string, selectedFilePath?: string, fileContent?: string) => void;
   onRequestCommandConfirmation?: (action: { type: 'github_commit' | 'command'; details: string; onAllow: () => void }) => void;
 }
@@ -48,17 +57,21 @@ interface GitHubRepoModalProps {
 export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
   isOpen,
   onClose,
+  currentUser,
+  onOpenAuthModal,
   onInsertRepoContext,
   onRequestCommandConfirmation,
 }) => {
-  const [tokenInput, setTokenInput] = useState(() => getSavedGitHubToken());
+  const isAuthenticated = !!(currentUser && currentUser.provider === 'google' && currentUser.id);
+  const [tokenInput, setTokenInput] = useState(() => getSavedGitHubToken(currentUser?.id));
+  const [showToken, setShowToken] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [user, setUser] = useState<GitHubUser | null>(null);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [searchRepo, setSearchRepo] = useState('');
-  const [selectedRepo, setSelectedRepo] = useState<string>(() => getSavedActiveRepo());
+  const [selectedRepo, setSelectedRepo] = useState<string>(() => getSavedActiveRepo(currentUser?.id));
   const [branches, setBranches] = useState<string[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<string>(() => getSavedActiveBranch());
+  const [selectedBranch, setSelectedBranch] = useState<string>(() => getSavedActiveBranch(currentUser?.id));
   const [currentPath, setCurrentPath] = useState<string>('');
   const [files, setFiles] = useState<GitHubFileItem[]>([]);
   
@@ -72,14 +85,22 @@ export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Check authorization on open
+  // Check authorization on open or user switch
   useEffect(() => {
     if (!isOpen) return;
-    checkAuth();
-  }, [isOpen]);
+    if (isAuthenticated) {
+      const saved = getSavedGitHubToken(currentUser?.id);
+      setTokenInput(saved);
+      checkAuth(saved);
+    } else {
+      setIsAuthorized(false);
+      setUser(null);
+      setRepos([]);
+    }
+  }, [isOpen, currentUser?.id, isAuthenticated]);
 
   const checkAuth = async (tokenToUse?: string) => {
-    const t = tokenToUse !== undefined ? tokenToUse : getSavedGitHubToken();
+    const t = tokenToUse !== undefined ? tokenToUse : getSavedGitHubToken(currentUser?.id);
     if (!t) {
       setIsAuthorized(false);
       setUser(null);
@@ -102,13 +123,18 @@ export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
 
   const handleSaveToken = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAuthenticated) {
+      if (onOpenAuthModal) onOpenAuthModal();
+      return;
+    }
     const clean = tokenInput.trim();
-    saveGitHubToken(clean);
+    saveGitHubToken(clean, currentUser?.id);
     await checkAuth(clean);
   };
 
   const handleDisconnect = () => {
-    saveGitHubToken('');
+    saveGitHubToken('', currentUser?.id);
+    saveActiveRepo('', currentUser?.id);
     setTokenInput('');
     setIsAuthorized(false);
     setUser(null);
@@ -119,7 +145,7 @@ export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
 
   const loadRepos = async (token?: string) => {
     setLoading(true);
-    const res = await fetchGitHubRepos(token);
+    const res = await fetchGitHubRepos(token || getSavedGitHubToken(currentUser?.id));
     if (res.success) {
       setRepos(res.repos);
       if (selectedRepo && res.repos.some((r) => r.full_name === selectedRepo)) {
@@ -133,7 +159,7 @@ export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
 
   const loadRepoContents = async (repoName: string, branch?: string, path = '') => {
     setSelectedRepo(repoName);
-    saveActiveRepo(repoName);
+    saveActiveRepo(repoName, currentUser?.id);
     setLoading(true);
     setErrorMsg(null);
     setActiveFile(null);
@@ -263,13 +289,45 @@ export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* 1. Authorization Section */}
-          {!isAuthorized ? (
+          {/* 1. If Not Authenticated with Google: Show Login Gate */}
+          {!isAuthenticated ? (
+            <div className="max-w-md mx-auto py-10 text-center space-y-5">
+              <div className="w-16 h-16 mx-auto rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <Lock className="w-8 h-8" />
+              </div>
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-[11px] font-bold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Private & Isolated Credential Vault</span>
+                </div>
+                <h3 className="text-lg font-bold">Sign in required to add GitHub token</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  To ensure your Personal Access Tokens and repositories remain <strong>100% private to you</strong> and never visible to other users, please sign in with your Google account first.
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenAuthModal) onOpenAuthModal();
+                  }}
+                  className="w-full min-h-[44px] flex items-center justify-center gap-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign In with Google to Add Token</span>
+                </button>
+              </div>
+            </div>
+          ) : !isAuthorized ? (
             <div className="max-w-xl mx-auto py-8 text-center space-y-5">
               <div className="w-16 h-16 mx-auto rounded-3xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300">
                 <Key className="w-8 h-8" />
               </div>
               <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold mb-2">
+                  <ShieldCheck className="w-3 h-3" /> Private to {currentUser?.email || currentUser?.name}
+                </div>
                 <h3 className="text-lg font-bold">Connect your GitHub Account</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Enter your GitHub Personal Access Token (classic with <code className="text-violet-600 dark:text-violet-400 font-mono">repo</code> scope or fine-grained token) to modify files and push commits.
@@ -278,16 +336,29 @@ export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
 
               <form onSubmit={handleSaveToken} className="space-y-3 text-left">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Personal Access Token (PAT)
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    value={tokenInput}
-                    onChange={(e) => setTokenInput(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Personal Access Token (PAT)
+                    </label>
+                    <span className="text-[10px] text-slate-400">Encrypted in your private profile</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showToken ? 'text' : 'password'}
+                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                      value={tokenInput}
+                      onChange={(e) => setTokenInput(e.target.value)}
+                      className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken(!showToken)}
+                      className="absolute right-3 top-2.5 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title={showToken ? 'Hide token' : 'Show token'}
+                    >
+                      {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {errorMsg && (
@@ -331,8 +402,12 @@ export const GitHubRepoModal: React.FC<GitHubRepoModalProps> = ({
                       <span>{user?.name || user?.login}</span>
                       <span className="text-slate-400 font-normal">(@{user?.login})</span>
                     </div>
-                    <div className="text-[11px] text-slate-500">
-                      {user?.public_repos} public repos • Authorized
+                    <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                      <span>{user?.public_repos} public repos</span>
+                      <span>•</span>
+                      <span className="font-mono text-emerald-600 dark:text-emerald-400 font-medium">
+                        Token: {maskToken(tokenInput)}
+                      </span>
                     </div>
                   </div>
                 </div>

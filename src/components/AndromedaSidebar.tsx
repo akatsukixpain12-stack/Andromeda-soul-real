@@ -20,7 +20,6 @@ import {
   Shield,
   User,
   LogOut,
-  Mail,
 } from 'lucide-react';
 import { Conversation, UserSettings, UserProfile } from '../types';
 import { UserAvatar } from './UserAvatar';
@@ -39,7 +38,6 @@ interface AndromedaSidebarProps {
   onOpenProviders: () => void;
   onOpenAuth?: () => void;
   onOpenKnowledgeModal?: () => void;
-  onExportGmail?: (conv: Conversation) => void;
   knowledgeCount?: number;
   onOpenMediaEngine?: () => void;
   onOpenTerminal?: () => void;
@@ -62,7 +60,6 @@ export const AndromedaSidebar: React.FC<AndromedaSidebarProps> = ({
   onOpenProviders,
   onOpenAuth,
   onOpenKnowledgeModal,
-  onExportGmail,
   knowledgeCount = 0,
   onOpenMediaEngine,
   onOpenTerminal,

@@ -32,62 +32,88 @@ export interface GitHubUser {
   public_repos: number;
 }
 
-const STORAGE_KEY_GITHUB_TOKEN = 'andromeda_github_token_v1';
-const STORAGE_KEY_SELECTED_REPO = 'andromeda_selected_github_repo_v1';
-const STORAGE_KEY_SELECTED_BRANCH = 'andromeda_selected_github_branch_v1';
+const STORAGE_KEY_GITHUB_TOKEN_PREFIX = 'andromeda_github_token_user_';
+const STORAGE_KEY_SELECTED_REPO_PREFIX = 'andromeda_selected_github_repo_user_';
+const STORAGE_KEY_SELECTED_BRANCH_PREFIX = 'andromeda_selected_github_branch_user_';
 
-export function getSavedGitHubToken(): string {
+export function getSavedGitHubToken(userId?: string): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_GITHUB_TOKEN) || '';
+    if (userId && userId !== 'guest') {
+      return localStorage.getItem(`${STORAGE_KEY_GITHUB_TOKEN_PREFIX}${userId}`) || '';
+    }
+    return '';
   } catch {
     return '';
   }
 }
 
-export function saveGitHubToken(token: string): void {
+export function saveGitHubToken(token: string, userId?: string): void {
   try {
-    if (token) {
-      localStorage.setItem(STORAGE_KEY_GITHUB_TOKEN, token);
-    } else {
-      localStorage.removeItem(STORAGE_KEY_GITHUB_TOKEN);
+    if (userId && userId !== 'guest') {
+      const key = `${STORAGE_KEY_GITHUB_TOKEN_PREFIX}${userId}`;
+      if (token) {
+        localStorage.setItem(key, token);
+      } else {
+        localStorage.removeItem(key);
+      }
     }
   } catch {}
 }
 
-export function getSavedActiveRepo(): string {
+export function getSavedActiveRepo(userId?: string): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_SELECTED_REPO) || '';
+    if (userId && userId !== 'guest') {
+      return localStorage.getItem(`${STORAGE_KEY_SELECTED_REPO_PREFIX}${userId}`) || '';
+    }
+    return '';
   } catch {
     return '';
   }
 }
 
-export function saveActiveRepo(repo: string): void {
+export function saveActiveRepo(repo: string, userId?: string): void {
   try {
-    if (repo) {
-      localStorage.setItem(STORAGE_KEY_SELECTED_REPO, repo);
-    } else {
-      localStorage.removeItem(STORAGE_KEY_SELECTED_REPO);
+    if (userId && userId !== 'guest') {
+      const key = `${STORAGE_KEY_SELECTED_REPO_PREFIX}${userId}`;
+      if (repo) {
+        localStorage.setItem(key, repo);
+      } else {
+        localStorage.removeItem(key);
+      }
     }
   } catch {}
 }
 
-export function getSavedActiveBranch(): string {
+export function getSavedActiveBranch(userId?: string): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_SELECTED_BRANCH) || 'main';
+    if (userId && userId !== 'guest') {
+      return localStorage.getItem(`${STORAGE_KEY_SELECTED_BRANCH_PREFIX}${userId}`) || 'main';
+    }
+    return 'main';
   } catch {
     return 'main';
   }
 }
 
-export function saveActiveBranch(branch: string): void {
+export function saveActiveBranch(branch: string, userId?: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY_SELECTED_BRANCH, branch || 'main');
+    if (userId && userId !== 'guest') {
+      const key = `${STORAGE_KEY_SELECTED_BRANCH_PREFIX}${userId}`;
+      localStorage.setItem(key, branch || 'main');
+    }
   } catch {}
 }
 
 export const setSavedActiveRepo = saveActiveRepo;
 export const setSavedActiveBranch = saveActiveBranch;
+
+export function maskToken(token: string): string {
+  if (!token) return '';
+  if (token.length <= 8) return '••••••••';
+  const prefix = token.slice(0, 4);
+  const suffix = token.slice(-4);
+  return `${prefix}••••••••${suffix}`;
+}
 
 export async function fetchGitHubUser(token?: string): Promise<{ success: boolean; user?: GitHubUser; error?: string }> {
   try {

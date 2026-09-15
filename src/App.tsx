@@ -588,28 +588,6 @@ export function App() {
     }
   };
 
-  // Export conversation transcript directly into Gmail App & Google Cloud
-  const handleExportToGmail = (conversationToExport?: Conversation) => {
-    const target = conversationToExport || activeConversation;
-    if (!target) return;
-    persistConversationToCloud(target);
-
-    const transcript = target.messages
-      .map((m) => {
-        const sender = m.role === 'user' ? (currentUser?.name || 'User') : (m.model || 'Andromeda Soul AI');
-        return `[${sender}]:\n${m.content}\n`;
-      })
-      .join('\n----------------------------------------\n\n');
-
-    const subject = encodeURIComponent(`[Andromeda Chat Backup] ${target.title}`);
-    const body = encodeURIComponent(
-      `Andromeda Soul Conversation Transcript\nTitle: ${target.title}\nDate: ${new Date(target.createdAt).toLocaleString()}\nSaved to Google Cloud: Yes\n\n========================================\n\n${transcript}`
-    );
-
-    const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=${encodeURIComponent(currentUser?.email || '')}&su=${subject}&body=${body}`;
-    window.open(gmailComposeUrl, '_blank');
-  };
-
   return (
     <div className="flex h-[100dvh] w-full max-w-full bg-[#FAF9F5] text-[#1C1917] overflow-hidden select-text">
       {/* 1. Left Sidebar (Collapsible drawer with chats, search, and free provider widgets) */}
@@ -627,7 +605,6 @@ export function App() {
         onOpenProviders={() => setIsProvidersModalOpen(true)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenKnowledgeModal={() => setIsKnowledgeModalOpen(true)}
-        onExportGmail={handleExportToGmail}
         knowledgeCount={learnedKnowledge.length}
         onOpenMediaEngine={() => setIsMediaEngineOpen(true)}
         onOpenTerminal={() => setIsTerminalOpen(true)}
@@ -648,7 +625,6 @@ export function App() {
           onOpenProvidersModal={() => setIsProvidersModalOpen(true)}
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onOpenKnowledgeModal={() => setIsKnowledgeModalOpen(true)}
-          onExportGmail={() => handleExportToGmail()}
           knowledgeCount={learnedKnowledge.length}
           currentUser={currentUser}
           activeConversationTitle={activeConversation?.title}
@@ -751,6 +727,8 @@ export function App() {
         isOpen={isProvidersModalOpen}
         onClose={() => setIsProvidersModalOpen(false)}
         settings={settings}
+        currentUser={currentUser}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onSaveSettings={(newSettings) => {
           setSettings(newSettings);
           if (currentUser?.id && currentUser.provider !== 'guest') {

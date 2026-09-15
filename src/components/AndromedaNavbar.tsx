@@ -17,7 +17,6 @@ import {
   Layers,
   Server,
   Terminal,
-  Mail,
 } from 'lucide-react';
 import { AIModelOption, ProviderConnectionStatus, UserProfile } from '../types';
 import { getAllModels, findModelById } from '../data/models';
@@ -32,7 +31,6 @@ interface AndromedaNavbarProps {
   onOpenProvidersModal: () => void;
   onOpenAuth?: () => void;
   onOpenKnowledgeModal?: () => void;
-  onExportGmail?: () => void;
   knowledgeCount?: number;
   currentUser?: UserProfile | null;
   activeConversationTitle?: string;
@@ -50,7 +48,6 @@ export const AndromedaNavbar: React.FC<AndromedaNavbarProps> = ({
   onOpenProvidersModal,
   onOpenAuth,
   onOpenKnowledgeModal,
-  onExportGmail,
   knowledgeCount = 0,
   currentUser,
   activeConversationTitle,
