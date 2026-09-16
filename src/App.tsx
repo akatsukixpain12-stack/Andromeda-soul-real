@@ -9,6 +9,8 @@ import { ConsoleModal } from './components/ConsoleModal';
 import { DiscordModal } from './components/DiscordModal';
 import { LearnedKnowledgeModal } from './components/LearnedKnowledgeModal';
 import { GitHubRepoModal } from './components/GitHubRepoModal';
+import { AndromedaSpecsModal } from './components/AndromedaSpecsModal';
+import { WelcomeModal } from './components/WelcomeModal';
 import { CommandPermissionCard } from './components/CommandPermissionCard';
 import { Conversation, ChatMessage, ChatAttachment, UserSettings, UserProfile, LearnedKnowledge } from './types';
 import { DEFAULT_SETTINGS } from './data/defaultSettings';
@@ -116,6 +118,8 @@ export function App() {
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isDiscordModalOpen, setIsDiscordModalOpen] = useState(false);
   const [isKnowledgeModalOpen, setIsKnowledgeModalOpen] = useState(false);
+  const [isSpecsModalOpen, setIsSpecsModalOpen] = useState(false);
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
   const [learnedKnowledge, setLearnedKnowledge] = useState<LearnedKnowledge[]>([
     {
       id: 'k-1',
@@ -157,6 +161,47 @@ export function App() {
       console.warn('Failed to persist settings to localStorage:', e);
     }
   }, [settings]);
+
+  // Mobile Touch Swipe Gesture: Swipe right from left edge to open sidebar, swipe left to close sidebar
+  useEffect(() => {
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.changedTouches.length === 1) {
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+
+        // Check horizontal swipe
+        if (Math.abs(deltaX) > 40 && Math.abs(deltaY) < 65) {
+          if (deltaX > 50 && touchStartX < 70) {
+            // Swipe right from left edge -> Open Sidebar
+            setIsSidebarOpen(true);
+          } else if (deltaX < -55 && isSidebarOpen) {
+            // Swipe left -> Close Sidebar
+            setIsSidebarOpen(false);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isSidebarOpen]);
 
   // Preserve Firebase's durable Google auth session; guest data remains session-only.
   useEffect(() => {
@@ -637,6 +682,7 @@ export function App() {
         onOpenMediaEngine={() => setIsMediaEngineOpen(true)}
         onOpenTerminal={() => setIsTerminalOpen(true)}
         onOpenDiscord={() => setIsDiscordModalOpen(true)}
+        onOpenWelcomeModal={() => setIsWelcomeModalOpen(true)}
         currentUser={currentUser}
         settings={settings}
       />
@@ -651,6 +697,8 @@ export function App() {
           selectedModelId={selectedModelId}
           onSelectModel={setSelectedModelId}
           onOpenProvidersModal={() => setIsProvidersModalOpen(true)}
+          onOpenSpecsModal={() => setIsSpecsModalOpen(true)}
+          onOpenWelcomeModal={() => setIsWelcomeModalOpen(true)}
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onOpenKnowledgeModal={() => setIsKnowledgeModalOpen(true)}
           knowledgeCount={learnedKnowledge.length}
@@ -835,6 +883,27 @@ export function App() {
         knowledgeList={learnedKnowledge}
         currentUser={currentUser}
         onAddKnowledge={(item) => setLearnedKnowledge((prev) => [item, ...prev])}
+      />
+
+      {/* 9. Andromeda Soul Model Architecture & Technical Specs Modal */}
+      <AndromedaSpecsModal
+        isOpen={isSpecsModalOpen}
+        onClose={() => setIsSpecsModalOpen(false)}
+        onSelectModel={setSelectedModelId}
+      />
+
+      {/* 10. Welcome Window & Terminal Fast Launch */}
+      <WelcomeModal
+        isOpen={isWelcomeModalOpen}
+        onClose={() => setIsWelcomeModalOpen(false)}
+        onOpenTerminal={() => {
+          setIsWelcomeModalOpen(false);
+          setIsTerminalOpen(true);
+        }}
+        onOpenSpecs={() => {
+          setIsWelcomeModalOpen(false);
+          setIsSpecsModalOpen(true);
+        }}
       />
     </div>
   );

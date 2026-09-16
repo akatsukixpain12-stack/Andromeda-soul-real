@@ -1,6 +1,6 @@
 {
   "name": "Andromeda Soul",
-  "description": "Premium white AI workspace for Andromeda Soul with Google Cloud persistence, 100+ AI models, Discord bot gateway, and built-in shell.",
+  "description": "Andromeda Soul — An intelligence with a soul. Independent AI model architecture, native autoregressive transformer, custom tokenizer, training pipeline, and Andromeda Vision.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

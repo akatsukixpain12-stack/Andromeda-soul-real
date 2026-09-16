@@ -42,6 +42,7 @@ interface AndromedaSidebarProps {
   onOpenMediaEngine?: () => void;
   onOpenTerminal?: () => void;
   onOpenDiscord?: () => void;
+  onOpenWelcomeModal?: () => void;
   currentUser?: UserProfile | null;
   settings: UserSettings;
 }
@@ -64,6 +65,7 @@ export const AndromedaSidebar: React.FC<AndromedaSidebarProps> = ({
   onOpenMediaEngine,
   onOpenTerminal,
   onOpenDiscord,
+  onOpenWelcomeModal,
   currentUser,
   settings,
 }) => {
@@ -250,7 +252,14 @@ export const AndromedaSidebar: React.FC<AndromedaSidebarProps> = ({
         {/* Top Header: Logo + Tagline + New Chat */}
         <div className="p-4 border-b border-slate-100 space-y-3.5 bg-white">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => {
+                onOpenWelcomeModal?.();
+                if (window.innerWidth < 768) onCloseMobile();
+              }}
+              className="flex items-center gap-2.5 text-left cursor-pointer group"
+              title="Open Welcome Window & Architecture Specs"
+            >
               <div className="relative group">
                 <img
                   src="/andromeda-logo.png"
@@ -261,10 +270,10 @@ export const AndromedaSidebar: React.FC<AndromedaSidebarProps> = ({
                 <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
               </div>
               <div className="leading-tight">
-                <span className="font-bold text-sm text-slate-900 tracking-tight block">Andromeda Soul</span>
+                <span className="font-bold text-sm text-slate-900 tracking-tight block group-hover:text-indigo-600 transition-colors">Andromeda Soul</span>
                 <span className="text-[11px] text-slate-500 font-medium block">Think • Code • Create</span>
               </div>
-            </div>
+            </button>
 
             <button
               onClick={onCloseMobile}

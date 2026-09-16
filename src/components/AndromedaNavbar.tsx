@@ -30,6 +30,8 @@ interface AndromedaNavbarProps {
   selectedModelId: string;
   onSelectModel: (modelId: string) => void;
   onOpenProvidersModal: () => void;
+  onOpenSpecsModal?: () => void;
+  onOpenWelcomeModal?: () => void;
   onOpenAuth?: () => void;
   onOpenKnowledgeModal?: () => void;
   knowledgeCount?: number;
@@ -47,6 +49,8 @@ export const AndromedaNavbar: React.FC<AndromedaNavbarProps> = ({
   selectedModelId,
   onSelectModel,
   onOpenProvidersModal,
+  onOpenSpecsModal,
+  onOpenWelcomeModal,
   onOpenAuth,
   onOpenKnowledgeModal,
   knowledgeCount = 0,
@@ -133,13 +137,18 @@ export const AndromedaNavbar: React.FC<AndromedaNavbarProps> = ({
           <button
             id="toggle-sidebar-button"
             onClick={onToggleSidebar}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 cursor-pointer shrink-0 bouncy-btn"
+            className="flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200/90 shadow-2xs cursor-pointer shrink-0 bouncy-btn transition-all"
             title={isSidebarOpen ? 'Collapse sidebar' : 'Open sidebar'}
           >
-            <PanelLeft className="w-5 h-5" />
+            <PanelLeft className="w-5 h-5 text-indigo-600 shrink-0" />
+            <span className="hidden xs:inline-block text-xs font-semibold text-slate-700">Menu</span>
           </button>
 
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100/70 border border-slate-200/80 shrink-0">
+          <button
+            onClick={onOpenWelcomeModal}
+            className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-100/70 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 shrink-0 cursor-pointer transition-all bouncy-btn"
+            title="Open Welcome Window & Sovereign Specs"
+          >
             <img
               src="/andromeda-logo.png"
               alt="Andromeda Soul Logo"
@@ -148,7 +157,7 @@ export const AndromedaNavbar: React.FC<AndromedaNavbarProps> = ({
             />
             <span className="hidden sm:inline text-xs font-bold text-slate-900 tracking-tight">Andromeda Soul</span>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="System Online" />
-          </div>
+          </button>
 
           {/* Active conversation title (Editable) */}
           <div className="min-w-0 max-w-[100px] sm:max-w-[160px] md:max-w-xs truncate">
@@ -272,15 +281,26 @@ export const AndromedaNavbar: React.FC<AndromedaNavbarProps> = ({
                 </div>
 
                 {/* Footer info in dropdown */}
-                <div className="mt-1 pt-2 border-t border-slate-100 px-3 py-2 flex items-center justify-between text-xs text-slate-500 bg-slate-50/70 rounded-xl">
-                  <span>100+ Cloud & local models supported</span>
+                <div className="mt-1 pt-2 border-t border-slate-100 px-3 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500 bg-slate-50/70 rounded-xl">
+                  {onOpenSpecsModal && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsModelDropdownOpen(false);
+                        onOpenSpecsModal();
+                      }}
+                      className="font-semibold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Andromeda Soul Specs (1.0 - 2.1)
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
                       setIsModelDropdownOpen(false);
                       onOpenProvidersModal();
                     }}
-                    className="font-semibold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
+                    className="font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
                   >
                     <Sliders className="w-3.5 h-3.5" /> Fleet Settings
                   </button>

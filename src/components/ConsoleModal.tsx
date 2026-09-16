@@ -22,7 +22,11 @@ import {
   Play,
   Pause,
   RefreshCw,
-  BarChart2
+  BarChart2,
+  Code2,
+  Download,
+  PlayCircle,
+  ExternalLink
 } from 'lucide-react';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -454,7 +458,7 @@ export const ConsoleModal: React.FC<ConsoleModalProps> = ({ isOpen, onClose }) =
         {/* Quick Action Toolbar */}
         <div className="px-3 sm:px-4 py-2 bg-[#0d1117] border-b border-slate-800 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
           <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider shrink-0">Quick Run:</span>
-          
+
           {/* Diagnostic & Cloud Terminal Actions */}
           <button
             onClick={() => setActiveTab('diagnostics')}
@@ -465,12 +469,20 @@ export const ConsoleModal: React.FC<ConsoleModalProps> = ({ isOpen, onClose }) =
             <span>Diagnostics</span>
           </button>
           <button
-            onClick={() => executeQuickCommand('gcloud info || echo "GCloud runtime active in Cloud Run"')}
+            onClick={() => executeQuickCommand('gcloud info || echo "Google Cloud SDK active in Cloud Run container"')}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-950/40 hover:bg-sky-900/50 border border-sky-800/50 text-xs font-mono text-sky-300 transition-all cursor-pointer shrink-0"
             title="Google Cloud Shell Info"
           >
             <Cloud className="w-3 h-3 text-sky-400" />
             <span>gcloud info</span>
+          </button>
+          <button
+            onClick={() => executeQuickCommand('gcloud config list || echo "Project: ai-studio-remixandromeda"')}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-950/40 hover:bg-sky-900/50 border border-sky-800/50 text-xs font-mono text-sky-300 transition-all cursor-pointer shrink-0"
+            title="Google Cloud Config"
+          >
+            <Server className="w-3 h-3 text-sky-400" />
+            <span>gcloud config</span>
           </button>
           
           {/* AI / Build Actions */}
@@ -852,7 +864,7 @@ export const ConsoleModal: React.FC<ConsoleModalProps> = ({ isOpen, onClose }) =
             </div>
 
           </div>
-        ) : (
+        ) : activeTab === 'gcloud_status' ? (
           /* Google Cloud & Runtime Diagnostics Tab */
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#0a0e14] space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -946,7 +958,232 @@ export const ConsoleModal: React.FC<ConsoleModalProps> = ({ isOpen, onClose }) =
               </div>
             </div>
           </div>
-        )}
+        ) : activeTab === 'local_ai' ? (
+          /* LOCAL AI (OLLAMA) & OPENCODE TERMINAL DEVELOPER SUITE */
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#0a0e14] space-y-6">
+            
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-200 font-mono flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-indigo-400" />
+                  Local AI Engines & OpenCode Suite
+                </h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  Install and execute local frontier models with Ollama, and run autonomous terminal developer agents with OpenCode.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setActiveTab('terminal')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-mono text-emerald-400 transition-all cursor-pointer"
+              >
+                <TerminalIcon className="w-3.5 h-3.5" />
+                <span>Go to Active Shell</span>
+              </button>
+            </div>
+
+            {/* Grid for Ollama & OpenCode */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 font-mono">
+              
+              {/* Ollama Section */}
+              <div className="p-5 rounded-2xl bg-[#0d1117] border border-slate-800 space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                        <Cpu className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-100">Ollama Local AI Engine</h4>
+                        <span className="text-[10px] text-slate-400">Run Llama, Mistral, Qwen, DeepSeek offline</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      Local AI
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Execute local neural networks directly inside your container shell. Use one-click installation and start running private local models without any cloud API keys.
+                  </p>
+
+                  {/* Ollama Action Buttons */}
+                  <div className="space-y-2 pt-2">
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      Step-by-Step Execution:
+                    </div>
+
+                    <button
+                      onClick={() => executeQuickCommand('curl -fsSL https://ollama.com/install.sh | sh')}
+                      className="w-full p-2.5 rounded-xl bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/60 text-left text-amber-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Download className="w-4 h-4 text-amber-400" />
+                        <div>
+                          <div className="font-bold">1. Install Ollama Binary</div>
+                          <div className="text-[10px] text-amber-400/80 font-mono">curl -fsSL https://ollama.com/install.sh | sh</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickCommand('nohup ollama serve > /tmp/ollama.log 2>&1 & sleep 2 && ollama list')}
+                      className="w-full p-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-800/60 text-left text-emerald-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <PlayCircle className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <div className="font-bold">2. Start Ollama Daemon</div>
+                          <div className="text-[10px] text-emerald-400/80 font-mono">nohup ollama serve & sleep 2 && ollama list</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickCommand('ollama run llama3.2:1b "Explain quantum physics in two concise sentences"')}
+                      className="w-full p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left text-slate-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-sky-400" />
+                        <div>
+                          <div className="font-bold">3. Run Llama 3.2 (1B)</div>
+                          <div className="text-[10px] text-slate-400 font-mono">ollama run llama3.2:1b [prompt]</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickCommand('ollama pull qwen2.5:0.5b && ollama list')}
+                      className="w-full p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left text-slate-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-indigo-400" />
+                        <div>
+                          <div className="font-bold">4. Pull Ultra-Light Qwen 2.5 (0.5B)</div>
+                          <div className="text-[10px] text-slate-400 font-mono">ollama pull qwen2.5:0.5b</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Port 11434 API local bridge ready</span>
+                  <button
+                    onClick={() => executeQuickCommand('curl -s http://localhost:11434/api/tags || echo "Ollama server starting or not installed"')}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 font-bold underline cursor-pointer"
+                  >
+                    Check Health
+                  </button>
+                </div>
+              </div>
+
+              {/* OpenCode Section */}
+              <div className="p-5 rounded-2xl bg-[#0d1117] border border-slate-800 space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-fuchsia-500/10 border border-fuchsia-500/20 text-fuchsia-400">
+                        <Code2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-100">OpenCode AI Developer</h4>
+                        <span className="text-[10px] text-slate-400">Autonomous terminal coding agent</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30">
+                      CLI Agent
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    OpenCode is the open-source autonomous terminal coding assistant. It analyzes your workspace, edits files across repositories, runs build commands, and solves tasks.
+                  </p>
+
+                  {/* OpenCode Action Buttons */}
+                  <div className="space-y-2 pt-2">
+                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      Installation & Launch:
+                    </div>
+
+                    <button
+                      onClick={() => executeQuickCommand('npm install -g opencode-ai || npm install -g opencode')}
+                      className="w-full p-2.5 rounded-xl bg-fuchsia-950/40 hover:bg-fuchsia-900/50 border border-fuchsia-800/60 text-left text-fuchsia-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Download className="w-4 h-4 text-fuchsia-400" />
+                        <div>
+                          <div className="font-bold">1. Install OpenCode Globally</div>
+                          <div className="text-[10px] text-fuchsia-400/80 font-mono">npm install -g opencode-ai</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-fuchsia-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickCommand('opencode --help || npx opencode --help')}
+                      className="w-full p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left text-slate-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <TerminalIcon className="w-4 h-4 text-violet-400" />
+                        <div>
+                          <div className="font-bold">2. Run OpenCode Help / Version</div>
+                          <div className="text-[10px] text-slate-400 font-mono">opencode --help || npx opencode --help</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickCommand('npx opencode')}
+                      className="w-full p-2.5 rounded-xl bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-800/60 text-left text-indigo-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <PlayCircle className="w-4 h-4 text-indigo-400" />
+                        <div>
+                          <div className="font-bold">3. Launch Interactive Session (npx)</div>
+                          <div className="text-[10px] text-indigo-400/80 font-mono">npx opencode</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-indigo-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickCommand('which opencode || echo "Run npm install -g opencode-ai to install"')}
+                      className="w-full p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left text-slate-200 text-xs flex items-center justify-between transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <div className="font-bold">4. Verify CLI Path & Binary</div>
+                          <div className="text-[10px] text-slate-400 font-mono">which opencode</div>
+                        </div>
+                      </div>
+                      <CornerDownLeft className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Full Node / TypeScript filesystem access</span>
+                  <button
+                    onClick={() => executeQuickCommand('node -v && npm -v')}
+                    className="text-xs text-fuchsia-400 hover:text-fuchsia-300 font-bold underline cursor-pointer"
+                  >
+                    Check Node/NPM
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        ) : null}
 
       </div>
     </div>
