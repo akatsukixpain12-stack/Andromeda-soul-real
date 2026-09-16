@@ -70,8 +70,8 @@ export const AI_MODELS: AIModelOption[] = [
 
   // --- GOOGLE GEMINI API (FRONTIER CLOUD MODELS) ---
   {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
+    id: 'gemini-3.6-flash',
+    name: 'Gemini 3.6 Flash',
     provider: 'gemini',
     providerLabel: 'Google Gemini',
     description: 'Google’s recommended frontier model for rapid multimodal reasoning, high throughput, and coding.',
@@ -79,18 +79,6 @@ export const AI_MODELS: AIModelOption[] = [
     isFree: true,
     speed: 'Ultra Fast',
     intelligence: 'High',
-    supportsThinking: true,
-  },
-  {
-    id: 'gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro',
-    provider: 'gemini',
-    providerLabel: 'Google Gemini',
-    description: 'Google’s flagship frontier reasoning model for complex STEM problems, massive codebases, and architectural design.',
-    badge: 'Frontier Pro',
-    isFree: true,
-    speed: 'Fast',
-    intelligence: 'Frontier',
     supportsThinking: true,
   },
   {
@@ -110,8 +98,8 @@ export const AI_MODELS: AIModelOption[] = [
     name: 'Gemini 3.1 Pro Preview',
     provider: 'gemini',
     providerLabel: 'Google Gemini',
-    description: 'Google’s most advanced preview intelligence with deep reasoning and extended cognitive deliberation.',
-    badge: 'Preview Pro',
+    description: 'Google’s flagship frontier reasoning model for complex STEM problems, massive codebases, and architectural design.',
+    badge: 'Frontier Pro',
     isFree: true,
     speed: 'Balanced',
     intelligence: 'Maximum',

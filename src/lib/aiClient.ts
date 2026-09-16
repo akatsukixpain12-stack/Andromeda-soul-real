@@ -909,12 +909,21 @@ async function streamGeminiOrClaude({
   const effectiveThinking = enableThinking || modelMeta.supportsThinking || false;
 
   let accumulated = '';
+  const reqStart = performance.now();
+  let firstTokenTime: number | null = null;
+
+  const storedGeminiKey = (typeof window !== 'undefined' && localStorage.getItem('gemini_api_key')) || '';
+  const storedOpenaiKey = (typeof window !== 'undefined' && localStorage.getItem('openai_api_key')) || '';
+  const effectiveApiKey = settings.geminiApiKey || modelMeta.customApiKey || storedGeminiKey || '';
 
   // 1. First attempt server /api/chat
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(effectiveApiKey ? { 'x-api-key': effectiveApiKey } : {}),
+      },
       body: JSON.stringify({
         prompt,
         history: history.slice(-10),
@@ -923,6 +932,9 @@ async function streamGeminiOrClaude({
         enableThinking: effectiveThinking,
         thinkingLevel,
         attachments,
+        apiKey: effectiveApiKey,
+        geminiApiKey: settings.geminiApiKey || storedGeminiKey,
+        openaiApiKey: modelMeta.customApiKey || storedOpenaiKey,
       }),
       signal,
     });
@@ -955,11 +967,50 @@ async function streamGeminiOrClaude({
                   throw new Error(parsed.message);
                 }
                 if ((currentEvent === 'token' || currentEvent === 'chunk') && parsed.text) {
+                  if (firstTokenTime === null) {
+                    firstTokenTime = performance.now();
+                    const ttft = Math.round(firstTokenTime - reqStart);
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(
+                        new CustomEvent('andromeda:latency-update', {
+                          detail: { modelId, latencyMs: ttft, ttftMs: ttft },
+                        })
+                      );
+                    }
+                  }
                   accumulated += parsed.text;
                   onToken(parsed.text);
                 } else if (currentEvent === 'thought' && parsed.thought && onThought) {
+                  if (firstTokenTime === null) {
+                    firstTokenTime = performance.now();
+                    const ttft = Math.round(firstTokenTime - reqStart);
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(
+                        new CustomEvent('andromeda:latency-update', {
+                          detail: { modelId, latencyMs: ttft, ttftMs: ttft },
+                        })
+                      );
+                    }
+                  }
                   onThought(parsed.thought);
                 } else if (currentEvent === 'done') {
+                  const totalDur = Math.round(performance.now() - reqStart);
+                  const ttftFinal = firstTokenTime ? Math.round(firstTokenTime - reqStart) : totalDur;
+                  const tokensEst = Math.round(accumulated.length / 4);
+                  const tokPerSec = totalDur > 0 ? Math.round((tokensEst / (totalDur / 1000))) : 0;
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('andromeda:latency-update', {
+                        detail: {
+                          modelId,
+                          latencyMs: ttftFinal,
+                          ttftMs: ttftFinal,
+                          durationMs: totalDur,
+                          tokensPerSec: tokPerSec,
+                        },
+                      })
+                    );
+                  }
                   return accumulated;
                 }
               } catch (e: any) {

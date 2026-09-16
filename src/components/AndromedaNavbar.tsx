@@ -21,6 +21,7 @@ import {
 import { AIModelOption, ProviderConnectionStatus, UserProfile } from '../types';
 import { getAllModels, findModelById } from '../data/models';
 import { UserAvatar } from './UserAvatar';
+import { LatencyMonitor } from './LatencyMonitor';
 
 interface AndromedaNavbarProps {
   isSidebarOpen: boolean;
@@ -176,115 +177,124 @@ export const AndromedaNavbar: React.FC<AndromedaNavbarProps> = ({
           </div>
         </div>
 
-        {/* Center: Model & Provider Selector Pill */}
-        <div className="relative" ref={dropdownRef}>
-          <button
-            id="model-selector-pill"
-            onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-            className="flex items-center gap-1.5 sm:gap-2.5 px-3 sm:px-4 py-1.5 rounded-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 shadow-sm hover:shadow-md hover:border-indigo-200 bouncy-btn max-w-[150px] sm:max-w-none cursor-pointer"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              {getProviderIcon(currentModel.provider)}
-              <span className="text-xs sm:text-sm font-semibold text-slate-900 truncate max-w-[80px] sm:max-w-none">{currentModel.name}</span>
-            </div>
-
-            {currentModel.badge && (
-              <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                {currentModel.badge}
-              </span>
-            )}
-
-            <ChevronDown
-              className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${
-                isModelDropdownOpen ? 'rotate-180' : ''
-              }`}
-            />
-          </button>
-
-          {/* Dropdown Menu */}
-          {isModelDropdownOpen && (
-            <div className="fixed inset-x-2 top-14 sm:inset-x-auto sm:top-auto sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:mt-2 w-auto sm:w-104 max-h-[80dvh] rounded-2xl bg-white border border-slate-200 shadow-2xl p-2 z-50 animate-in fade-in duration-150 flex flex-col">
-              <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between shrink-0">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Select AI Intelligence</span>
-                <button
-                  onClick={() => {
-                    setIsModelDropdownOpen(false);
-                    onOpenProvidersModal();
-                  }}
-                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer flex items-center gap-1 bouncy-btn"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Configure Models</span>
-                </button>
+        {/* Center: Model & Provider Selector Pill + Real-Time Latency Monitor */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <div className="relative" ref={dropdownRef}>
+            <button
+              id="model-selector-pill"
+              onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+              className="flex items-center gap-1.5 sm:gap-2.5 px-3 sm:px-4 py-1.5 rounded-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 shadow-sm hover:shadow-md hover:border-indigo-200 bouncy-btn max-w-[150px] sm:max-w-none cursor-pointer"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {getProviderIcon(currentModel.provider)}
+                <span className="text-xs sm:text-sm font-semibold text-slate-900 truncate max-w-[80px] sm:max-w-none">{currentModel.name}</span>
               </div>
 
-              <div className="max-h-[55dvh] sm:max-h-96 overflow-y-auto divide-y divide-slate-100 py-1">
-                {modelGroups.map((group) => {
-                  const groupModels = allModels.filter(group.filter);
-                  if (groupModels.length === 0) return null;
+              {currentModel.badge && (
+                <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  {currentModel.badge}
+                </span>
+              )}
 
-                  return (
-                    <div key={group.key} className="py-1.5">
-                      <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        {group.title}
-                      </div>
-                      <div className="space-y-0.5">
-                        {groupModels.map((model) => {
-                          const isSelected = model.id === selectedModelId;
-                          return (
-                            <button
-                              key={model.id}
-                              id={`select-model-${model.id}`}
-                              onClick={() => {
-                                onSelectModel(model.id);
-                                setIsModelDropdownOpen(false);
-                              }}
-                              className={`w-full text-left px-3 py-2 rounded-xl flex items-start justify-between gap-2 transition-all cursor-pointer bouncy-btn ${
-                                isSelected ? 'bg-indigo-50/80 text-indigo-950 font-medium' : 'hover:bg-slate-50 text-slate-700'
-                              }`}
-                            >
-                              <div className="flex items-start gap-2.5 min-w-0">
-                                <div className="mt-0.5 p-1 rounded-lg bg-white border border-slate-200">
-                                  {getProviderIcon(model.provider)}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-sm font-semibold text-slate-900 truncate">{model.name}</span>
-                                    {model.badge && (
-                                      <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-600 font-medium">
-                                        {model.badge}
-                                      </span>
-                                    )}
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${
+                  isModelDropdownOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {/* Dropdown Menu */}
+            {isModelDropdownOpen && (
+              <div className="fixed inset-x-2 top-14 sm:inset-x-auto sm:top-auto sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:mt-2 w-auto sm:w-104 max-h-[80dvh] rounded-2xl bg-white border border-slate-200 shadow-2xl p-2 z-50 animate-in fade-in duration-150 flex flex-col">
+                <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between shrink-0">
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Select AI Intelligence</span>
+                  <button
+                    onClick={() => {
+                      setIsModelDropdownOpen(false);
+                      onOpenProvidersModal();
+                    }}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer flex items-center gap-1 bouncy-btn"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Configure Models</span>
+                  </button>
+                </div>
+
+                <div className="max-h-[55dvh] sm:max-h-96 overflow-y-auto divide-y divide-slate-100 py-1">
+                  {modelGroups.map((group) => {
+                    const groupModels = allModels.filter(group.filter);
+                    if (groupModels.length === 0) return null;
+
+                    return (
+                      <div key={group.key} className="py-1.5">
+                        <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          {group.title}
+                        </div>
+                        <div className="space-y-0.5">
+                          {groupModels.map((model) => {
+                            const isSelected = model.id === selectedModelId;
+                            return (
+                              <button
+                                key={model.id}
+                                id={`select-model-${model.id}`}
+                                onClick={() => {
+                                  onSelectModel(model.id);
+                                  setIsModelDropdownOpen(false);
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded-xl flex items-start justify-between gap-2 transition-all cursor-pointer bouncy-btn ${
+                                  isSelected ? 'bg-indigo-50/80 text-indigo-950 font-medium' : 'hover:bg-slate-50 text-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-start gap-2.5 min-w-0">
+                                  <div className="mt-0.5 p-1 rounded-lg bg-white border border-slate-200">
+                                    {getProviderIcon(model.provider)}
                                   </div>
-                                  <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{model.description}</p>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-sm font-semibold text-slate-900 truncate">{model.name}</span>
+                                      {model.badge && (
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-600 font-medium">
+                                          {model.badge}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{model.description}</p>
+                                  </div>
                                 </div>
-                              </div>
-                              {isSelected && <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-1" />}
-                            </button>
-                          );
-                        })}
+                                {isSelected && <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-1" />}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
 
-              {/* Footer info in dropdown */}
-              <div className="mt-1 pt-2 border-t border-slate-100 px-3 py-2 flex items-center justify-between text-xs text-slate-500 bg-slate-50/70 rounded-xl">
-                <span>100+ Cloud & local models supported</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModelDropdownOpen(false);
-                    onOpenProvidersModal();
-                  }}
-                  className="font-semibold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  <Sliders className="w-3.5 h-3.5" /> Fleet Settings
-                </button>
+                {/* Footer info in dropdown */}
+                <div className="mt-1 pt-2 border-t border-slate-100 px-3 py-2 flex items-center justify-between text-xs text-slate-500 bg-slate-50/70 rounded-xl">
+                  <span>100+ Cloud & local models supported</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModelDropdownOpen(false);
+                      onOpenProvidersModal();
+                    }}
+                    className="font-semibold text-indigo-600 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Sliders className="w-3.5 h-3.5" /> Fleet Settings
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          {/* Real-Time Model Latency Monitor */}
+          <LatencyMonitor
+            selectedModelId={selectedModelId}
+            customModels={customModels}
+            onOpenProvidersModal={onOpenProvidersModal}
+          />
         </div>
 
         {/* Right: Cloud Status, Providers config, Google Auth & New Chat */}
