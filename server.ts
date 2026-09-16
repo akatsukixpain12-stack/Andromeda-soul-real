@@ -12,6 +12,25 @@ import { scanFilesForSecrets } from './src/lib/secretScanner.js';
 import { exec, spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import fs from 'fs';
 import os from 'os';
+import { requireAuth, optionalAuth, AuthRequest } from './src/middleware/auth.ts';
+import { getOrCreateUser, getUserByUid, getUserSettings, updateUserSettings } from './src/db/users.ts';
+import {
+  saveConversation as sqlSaveConversation,
+  getConversations as sqlGetConversations,
+  getConversationById as sqlGetConversationById,
+  deleteConversation as sqlDeleteConversation,
+  deleteAllConversations as sqlDeleteAllConversations,
+} from './src/db/conversations.ts';
+import {
+  saveLearnedKnowledge as sqlSaveKnowledge,
+  getLearnedKnowledge as sqlGetKnowledge,
+  deleteLearnedKnowledge as sqlDeleteKnowledge,
+} from './src/db/knowledge.ts';
+import {
+  saveProject as sqlSaveProject,
+  getProjects as sqlGetProjects,
+  deleteProject as sqlDeleteProject,
+} from './src/db/projects.ts';
 
 dotenv.config();
 
@@ -299,160 +318,246 @@ async function startServer() {
     });
   });
 
-  // User Profile / Auth Endpoints (Stateless, client-driven)
-  app.get('/api/auth/profile', (req: Request, res: Response) => {
+  // User Profile / Auth Endpoints with Cloud SQL Sync
+  app.get('/api/auth/profile', optionalAuth, async (req: AuthRequest, res: Response) => {
+    if (req.user?.uid) {
+      try {
+        const user = await getUserByUid(req.user.uid);
+        if (user) {
+          return res.json({
+            id: user.uid,
+            name: user.name || req.user.name || 'User',
+            email: user.email || req.user.email || '',
+            avatar: user.avatar || req.user.picture || '',
+            provider: user.provider || 'google',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to get user from Cloud SQL:', err);
+      }
+    }
     res.json({ id: 'usr_guest', name: 'Guest', email: '', provider: 'guest' });
   });
 
-  app.post('/api/auth/profile', (req: Request, res: Response) => {
-    res.json(req.body || { provider: 'guest' });
+  app.post('/api/auth/profile', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const profile = req.body || {};
+    const uid = req.user?.uid || profile.id;
+    if (uid && uid !== 'usr_guest') {
+      try {
+        const synced = await getOrCreateUser({
+          uid,
+          email: profile.email || req.user?.email || '',
+          name: profile.name || req.user?.name || 'User',
+          avatar: profile.avatar || req.user?.picture || '',
+          provider: profile.provider || 'google',
+        });
+        return res.json({
+          id: synced.uid,
+          name: synced.name,
+          email: synced.email,
+          avatar: synced.avatar,
+          provider: synced.provider,
+        });
+      } catch (err) {
+        console.error('Failed to sync user to Cloud SQL:', err);
+      }
+    }
+    res.json(profile);
   });
 
   app.delete('/api/auth/profile', (req: Request, res: Response) => {
     res.json({ success: true });
   });
 
-  // GitHub OAuth Start
-  app.get('/api/auth/github/start', (req: Request, res: Response) => {
-    const clientId = process.env.GITHUB_CLIENT_ID;
-    const redirectUri = process.env.GITHUB_REDIRECT_URI || `${req.protocol}://${req.get('host')}/api/auth/github/callback`;
-
-    if (!clientId) {
-      return res.status(400).send(`
-        <html>
-          <body style="font-family:sans-serif; padding: 40px; text-align: center;">
-            <h2>GitHub OAuth Not Configured</h2>
-            <p>Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in your environment secrets or .env file.</p>
-            <a href="/" style="color: #2563eb; text-decoration: underline;">Return to App</a>
-          </body>
-        </html>
-      `);
-    }
-
-    const state = crypto.randomBytes(32).toString('hex');
-    const authUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo,user&state=${state}`;
-    res.redirect(authUrl);
-  });
-
-  // GitHub OAuth Callback
-  app.get('/api/auth/github/callback', async (req: Request, res: Response) => {
-    const { code } = req.query;
-    const clientId = process.env.GITHUB_CLIENT_ID;
-    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
-    const redirectUri = process.env.GITHUB_REDIRECT_URI || `${req.protocol}://${req.get('host')}/api/auth/github/callback`;
-
-    if (!code || !clientId || !clientSecret) {
-      return res.redirect('/?github_error=missing_credentials');
-    }
-
-    try {
-      const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-          code: String(code),
-          redirect_uri: redirectUri,
-        }),
-      });
-
-      if (!tokenRes.ok) {
-        throw new Error('Failed to exchange code with GitHub');
-      }
-
-      const tokenData = await tokenRes.json();
-      const accessToken = tokenData.access_token;
-      if (!accessToken) {
-        throw new Error('No access token returned from GitHub');
-      }
-
-      const userRes = await fetch('https://api.github.com/user', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'User-Agent': 'Andromeda-Sovereign-Studio',
-        },
-      });
-
-      if (!userRes.ok) {
-        throw new Error('Failed to fetch GitHub user profile');
-      }
-
-      const gitUser = await userRes.json();
-
-      db.updateDiscordConfig({
-        githubToken: accessToken,
-        githubRepo: gitUser.login ? `${gitUser.login}/workspace` : '',
-      });
-
-      res.redirect('/?github_success=true&username=' + encodeURIComponent(gitUser.login));
-    } catch (err: any) {
-      console.error('GitHub OAuth error:', err);
-      res.redirect('/?github_error=' + encodeURIComponent(err.message));
-    }
-  });
-
-  // Available Gemini Models
-  app.get('/api/models', (req: Request, res: Response) => {
-    res.json({ models: GEMINI_MODELS });
-  });
-
-  // In-memory Cloud Server Store for Conversations & Auto-Learned Knowledge
+  // Cloud SQL Database Store for Conversations & Auto-Learned Knowledge
   const serverCloudConversations = new Map<string, any[]>();
   const serverCloudKnowledge = new Map<string, any[]>();
 
-  app.get('/api/cloud/conversations', (req: Request, res: Response) => {
-    const userId = (req.query.userId as string) || 'default';
-    res.json({ conversations: serverCloudConversations.get(userId) || [] });
+  app.get('/api/cloud/conversations', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const userUid = req.user?.uid || (req.query.userId as string) || 'default';
+    try {
+      if (userUid && userUid !== 'default') {
+        const convs = await sqlGetConversations(userUid);
+        return res.json({ conversations: convs });
+      }
+    } catch (err) {
+      console.error('Failed to get conversations from Cloud SQL:', err);
+    }
+    res.json({ conversations: serverCloudConversations.get(userUid) || [] });
   });
 
-  app.post('/api/cloud/conversations', (req: Request, res: Response) => {
+  app.post('/api/cloud/conversations', optionalAuth, async (req: AuthRequest, res: Response) => {
     const { userId = 'default', conversation } = req.body;
+    const userUid = req.user?.uid || userId;
+
     if (conversation) {
-      const list = serverCloudConversations.get(userId) || [];
+      // 1. Persist to Cloud SQL PostgreSQL
+      if (userUid && userUid !== 'default') {
+        try {
+          await sqlSaveConversation({
+            id: conversation.id,
+            userUid,
+            title: conversation.title,
+            model: conversation.model,
+            pinned: conversation.pinned,
+            tags: conversation.tags,
+            summary: conversation.summary,
+            messages: conversation.messages,
+            createdAt: conversation.createdAt,
+            updatedAt: conversation.updatedAt,
+          });
+        } catch (err) {
+          console.error('Failed to save conversation to Cloud SQL:', err);
+        }
+      }
+
+      // 2. In-memory cache
+      const list = serverCloudConversations.get(userUid) || [];
       const idx = list.findIndex((c) => c.id === conversation.id);
       if (idx >= 0) {
         list[idx] = conversation;
       } else {
         list.unshift(conversation);
       }
-      serverCloudConversations.set(userId, list);
+      serverCloudConversations.set(userUid, list);
     }
     res.json({ success: true });
   });
 
-  app.post('/api/cloud/learn', (req: Request, res: Response) => {
+  app.delete('/api/cloud/conversations/:id', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const userUid = req.user?.uid || (req.query.userId as string) || 'default';
+    try {
+      if (userUid && userUid !== 'default') {
+        await sqlDeleteConversation(id, userUid);
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation from Cloud SQL:', err);
+    }
+    const list = serverCloudConversations.get(userUid) || [];
+    serverCloudConversations.set(
+      userUid,
+      list.filter((c) => c.id !== id)
+    );
+    res.json({ success: true });
+  });
+
+  app.post('/api/cloud/learn', optionalAuth, async (req: AuthRequest, res: Response) => {
     const { userId = 'default', knowledge } = req.body;
+    const userUid = req.user?.uid || userId;
+
     if (knowledge) {
-      const list = serverCloudKnowledge.get(userId) || [];
+      if (userUid && userUid !== 'default') {
+        try {
+          await sqlSaveKnowledge({
+            id: knowledge.id || `kn_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            userUid,
+            title: knowledge.title,
+            content: knowledge.content,
+            tags: knowledge.tags,
+            category: knowledge.category,
+            createdAt: knowledge.createdAt,
+            updatedAt: knowledge.updatedAt,
+          });
+        } catch (err) {
+          console.error('Failed to save learned knowledge to Cloud SQL:', err);
+        }
+      }
+
+      const list = serverCloudKnowledge.get(userUid) || [];
       list.unshift(knowledge);
-      serverCloudKnowledge.set(userId, list);
+      serverCloudKnowledge.set(userUid, list);
     }
     res.json({ success: true });
   });
 
-  app.get('/api/cloud/learn', (req: Request, res: Response) => {
-    const userId = (req.query.userId as string) || 'default';
-    res.json({ knowledge: serverCloudKnowledge.get(userId) || [] });
+  app.get('/api/cloud/learn', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const userUid = req.user?.uid || (req.query.userId as string) || 'default';
+    try {
+      if (userUid && userUid !== 'default') {
+        const knowledge = await sqlGetKnowledge(userUid);
+        return res.json({ knowledge });
+      }
+    } catch (err) {
+      console.error('Failed to get knowledge from Cloud SQL:', err);
+    }
+    res.json({ knowledge: serverCloudKnowledge.get(userUid) || [] });
   });
 
-  // Conversations (Stateless - Conversations are isolated per user on the client / Firebase)
-  app.get('/api/conversations', (req: Request, res: Response) => {
+  app.delete('/api/cloud/learn/:id', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const userUid = req.user?.uid || (req.query.userId as string) || 'default';
+    try {
+      if (userUid && userUid !== 'default') {
+        await sqlDeleteKnowledge(id, userUid);
+      }
+    } catch (err) {
+      console.error('Failed to delete knowledge from Cloud SQL:', err);
+    }
+    const list = serverCloudKnowledge.get(userUid) || [];
+    serverCloudKnowledge.set(
+      userUid,
+      list.filter((k) => k.id !== id)
+    );
+    res.json({ success: true });
+  });
+
+  // Conversations (Direct Cloud SQL backed CRUD)
+  app.get('/api/conversations', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const userUid = req.user?.uid || (req.query.userId as string);
+    if (userUid) {
+      try {
+        const convs = await sqlGetConversations(userUid);
+        return res.json(convs);
+      } catch (err) {
+        console.error('Failed to get conversations:', err);
+      }
+    }
     res.json([]);
   });
 
-  app.post('/api/conversations', (req: Request, res: Response) => {
-    res.json(req.body || {});
+  app.post('/api/conversations', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const conv = req.body || {};
+    const userUid = req.user?.uid || conv.userUid || 'default';
+    if (conv.id && userUid !== 'default') {
+      try {
+        const saved = await sqlSaveConversation({
+          id: conv.id,
+          userUid,
+          title: conv.title,
+          model: conv.model,
+          pinned: conv.pinned,
+          tags: conv.tags,
+          summary: conv.summary,
+          messages: conv.messages,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+        });
+        return res.json(saved);
+      } catch (err) {
+        console.error('Failed to save conversation:', err);
+      }
+    }
+    res.json(conv);
   });
 
-  app.delete('/api/conversations/:id', (req: Request, res: Response) => {
+  app.delete('/api/conversations/:id', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const userUid = req.user?.uid || (req.query.userId as string) || 'default';
+    try {
+      await sqlDeleteConversation(req.params.id, userUid);
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+    }
     res.json({ success: true });
   });
 
-  app.delete('/api/conversations', (req: Request, res: Response) => {
+  app.delete('/api/conversations', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const userUid = req.user?.uid || (req.query.userId as string) || 'default';
+    try {
+      await sqlDeleteAllConversations(userUid);
+    } catch (err) {
+      console.error('Failed to delete all conversations:', err);
+    }
     res.json({ success: true });
   });
 
@@ -1132,17 +1237,56 @@ npm start
     });
   });
 
-  // --- PROJECTS CRUD ---
-  app.get('/api/projects', (req: Request, res: Response) => {
+  // --- PROJECTS CRUD (Cloud SQL PostgreSQL with local fallback) ---
+  app.get('/api/projects', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const userUid = req.user?.uid || (req.query.userId as string);
+    if (userUid && userUid !== 'default') {
+      try {
+        const sqlList = await sqlGetProjects(userUid);
+        if (sqlList && sqlList.length > 0) {
+          return res.json(sqlList);
+        }
+      } catch (err) {
+        console.error('Failed to get projects from Cloud SQL:', err);
+      }
+    }
     res.json(db.getProjects());
   });
 
-  app.post('/api/projects', (req: Request, res: Response) => {
+  app.post('/api/projects', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const project = req.body || {};
+    const userUid = req.user?.uid || project.userUid || 'default';
+    if (project.id && userUid !== 'default') {
+      try {
+        const savedSql = await sqlSaveProject({
+          id: project.id,
+          userUid,
+          title: project.title,
+          description: project.description,
+          code: project.code,
+          type: project.type,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+        });
+        db.saveProject(project);
+        return res.json(savedSql);
+      } catch (err) {
+        console.error('Failed to save project to Cloud SQL:', err);
+      }
+    }
     const saved = db.saveProject(req.body);
     res.json(saved);
   });
 
-  app.delete('/api/projects/:id', (req: Request, res: Response) => {
+  app.delete('/api/projects/:id', optionalAuth, async (req: AuthRequest, res: Response) => {
+    const userUid = req.user?.uid || (req.query.userId as string) || 'default';
+    if (userUid !== 'default') {
+      try {
+        await sqlDeleteProject(req.params.id, userUid);
+      } catch (err) {
+        console.error('Failed to delete project from Cloud SQL:', err);
+      }
+    }
     db.deleteProject(req.params.id);
     res.json({ success: true });
   });

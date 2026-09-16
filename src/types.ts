@@ -85,6 +85,8 @@ export interface Conversation {
   thinkingLevel?: 'low' | 'medium' | 'high';
   githubRepo?: string;
   githubBranch?: string;
+  tags?: string[];
+  summary?: string;
 }
 
 export type AIProvider =

@@ -283,11 +283,39 @@ export function App() {
   const activeConversation = conversations.find((c) => c.id === activeConversationId) || conversations[0];
   const activeMessages = activeConversation ? activeConversation.messages : [];
 
-  // Helper to persist conversation to both Google Cloud Firestore and Google Cloud Server Storage
-  const persistConversationToCloud = (conv: Conversation) => {
+  // Helper to persist conversation to Google Cloud SQL and Google Cloud Firestore
+  const persistConversationToCloud = async (conv: Conversation) => {
     if (!conv) return;
     if (currentUser && currentUser.provider !== 'guest') {
       dbSaveConversation(currentUser.id, conv).catch(console.error);
+
+      // Secure Cloud SQL persistence
+      try {
+        const idToken = await auth.currentUser?.getIdToken().catch(() => '');
+        fetch('/api/cloud/conversations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({
+            userId: currentUser.id,
+            conversation: {
+              id: conv.id,
+              title: conv.title,
+              model: conv.model,
+              pinned: conv.pinned,
+              tags: conv.tags,
+              summary: conv.summary,
+              messages: conv.messages,
+              createdAt: conv.createdAt,
+              updatedAt: conv.updatedAt,
+            },
+          }),
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('Cloud SQL conversation persist notice:', err);
+      }
     }
     try {
       fetch('/api/save-chat', {
