@@ -1,6 +1,7 @@
 # ANDROMEDA — LOCAL AI OPERATING SYSTEM
 
 > **"One Soul. Hundreds of Minds."**
+> website - https://androai.ai.studio
 
 Andromeda is an advanced local-first AI operating environment designed for Windows and Linux workstations. It orchestrates **100+ AI models & providers** (Ollama, llama.cpp, LM Studio, GGUF, Google Gemini, OpenRouter, Anthropic, OpenAI) with a sovereign native intelligence layer called **Andromeda Soul 1**.
 
