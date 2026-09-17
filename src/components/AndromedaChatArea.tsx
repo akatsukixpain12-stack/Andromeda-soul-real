@@ -363,12 +363,6 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
     }
   };
 
-  // Token Usage & Cost Calculation
-  const totalSessionChars = messages.reduce((acc, m) => acc + (m.content?.length || 0) + (m.thought?.length || 0), 0) + streamingMessage.length + (streamingThought?.length || 0) + inputText.length;
-  const estimatedTokens = Math.max(16, Math.round(totalSessionChars / 4));
-  const costPerToken = currentModel.provider === 'gemini' ? 0.00000025 : 0.00000015;
-  const estimatedCost = (estimatedTokens * costPerToken).toFixed(4);
-
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50/60 relative overflow-hidden">
       {/* Messages Scroll Area */}
@@ -1036,35 +1030,6 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
                   {getProviderIcon(currentModel.provider)}
                   <span className="font-semibold truncate max-w-[120px]">{currentModel.name}</span>
                 </button>
-
-                {/* Token Usage & Cost Tracker Badge */}
-                <div className="relative group/token">
-                  <div className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-indigo-50/90 text-indigo-700 border border-indigo-200/80 shadow-2xs cursor-default">
-                    <Zap className="w-3 h-3 text-indigo-500 animate-pulse" />
-                    <span>{estimatedTokens.toLocaleString()} tok</span>
-                    <span className="text-slate-400">|</span>
-                    <span className="text-emerald-700 font-semibold">${estimatedCost}</span>
-                  </div>
-
-                  {/* Hover Tooltip breakdown */}
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/token:flex flex-col p-2.5 bg-slate-900 text-white text-[11px] rounded-xl shadow-xl z-50 w-52 font-mono space-y-1 pointer-events-none">
-                    <div className="font-bold text-indigo-300 border-b border-slate-800 pb-1 flex justify-between">
-                      <span>Token & Quota Tracker</span>
-                      <span>{currentModel.name.split(' ')[0]}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>Total Session Tokens:</span>
-                      <span className="text-white font-bold">{estimatedTokens.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>Estimated Cost:</span>
-                      <span className="text-emerald-400 font-bold">${estimatedCost}</span>
-                    </div>
-                    <div className="text-[9px] text-slate-400 pt-1 border-t border-slate-800/80">
-                      Calculated from message history & active prompt length.
-                    </div>
-                  </div>
-                </div>
               </div>
 
               {/* Right Action: Send / Stop button */}
