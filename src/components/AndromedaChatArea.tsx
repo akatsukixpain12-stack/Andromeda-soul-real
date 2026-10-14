@@ -364,9 +364,9 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-50/60 relative overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-10 space-y-6">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-10 space-y-6 bg-white">
         <div className="w-full max-w-4xl mx-auto space-y-6">
           {/* Empty Chat Welcome Landing Screen */}
           {messages.length === 0 && !isStreaming && (
@@ -389,31 +389,29 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
                 </span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mb-2">
-                Andromeda Soul
+              <h1 className="text-3xl sm:text-4xl font-semibold text-slate-900 tracking-tight mb-3">
+                What can I help you with?
               </h1>
-              <p className="text-sm sm:text-base text-slate-500 font-medium max-w-md leading-relaxed mb-8">
-                Think • Code • Create • Together
+              <p className="text-sm sm:text-base text-slate-500 font-normal max-w-md leading-relaxed mb-8">
+                Ask anything, learn something new, or make something with Andromeda.
               </p>
 
               {/* Interactive Suggestion Cards Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 max-w-3xl w-full">
                 {[
-                  { title: 'Build a Discord bot', desc: 'Code an autonomous bot with /discord command', prompt: 'Build a Discord bot' },
-                  { title: 'Create a TypeScript project', desc: 'Generate a full production Vite + Express app', prompt: 'Create a TypeScript project' },
-                  { title: 'Explain quantum computing', desc: 'Understand qubit state superposition simply', prompt: 'Explain quantum computing' },
-                  { title: 'Generate an image', desc: 'Synthesize a photo-realistic futuristic city', prompt: 'Generate an image of a futuristic cybernetic city' },
-                  { title: 'Analyze my code', desc: 'Refactor and optimize TypeScript performance', prompt: 'Analyze my code for optimization and edge cases' },
-                  { title: 'Build a website', desc: 'Design a high-converting white minimalist landing page', prompt: 'Build a responsive modern website' },
+                  { title: 'Learn something', desc: 'Explain a topic in simple words', prompt: 'Teach me something interesting in simple beginner-friendly language.' },
+                  { title: 'Write something', desc: 'Help with a message, story, or idea', prompt: 'Help me write something. Ask me what it is for if needed.' },
+                  { title: 'Make a plan', desc: 'Break a goal into easy steps', prompt: 'Help me make a simple step-by-step plan for a goal.' },
+                  { title: 'Build something', desc: 'Create a website or help with code', prompt: 'Help me build a simple project step by step, explaining each part for a beginner.' },
                 ].map((card) => (
                   <button
                     key={card.title}
                     onClick={() => onSendMessage(card.prompt, [], isThinkingEnabled)}
-                    className="group text-left p-4 rounded-2xl bg-white border border-slate-200/90 hover:border-indigo-300/80 text-slate-800 transition-all cursor-pointer shadow-xs hover:shadow-md bouncy-card"
+                    className="group text-left p-4 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 text-slate-800 transition-all cursor-pointer shadow-sm hover:shadow-md bouncy-card"
                   >
-                    <span className="block text-xs font-bold text-indigo-600 mb-1 flex items-center justify-between">
-                      <span>Suggestion</span>
-                      <Sparkles className="w-3 h-3 text-indigo-400 group-hover:scale-110 transition-transform" />
+                    <span className="block text-xs font-medium text-slate-500 mb-2 flex items-center justify-between">
+                      <span>Try this</span>
+                      <Sparkles className="w-3 h-3 text-slate-400 group-hover:scale-110 transition-transform" />
                     </span>
                     <span className="block font-bold text-sm text-slate-900 mb-1">{card.title}</span>
                     <span className="block text-xs text-slate-500 leading-snug">{card.desc}</span>
@@ -454,7 +452,7 @@ export const AndromedaChatArea: React.FC<AndromedaChatAreaProps> = ({
                       </div>
                     )}
 
-                    <div className="px-4 py-3 rounded-2xl rounded-tr-md bg-slate-900 text-white text-sm leading-relaxed whitespace-pre-wrap font-sans shadow-sm shadow-slate-200 selection:bg-indigo-500 selection:text-white">
+                    <div className="px-4 py-3 rounded-2xl rounded-tr-md bg-slate-100 text-slate-900 text-sm leading-relaxed whitespace-pre-wrap font-sans selection:bg-indigo-200">
                       {content}
                     </div>
                   </div>
